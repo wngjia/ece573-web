@@ -1,0 +1,463 @@
+<html>
+<head>
+<link rel="stylesheet" type="text/css" href="course.css">
+<title>ECE 473/573 Fall 2025 - Project 4</title>
+</head>
+<body>
+
+<center>
+<p>
+<h1>ECE 473/573 Fall 2025 - Project 4</h1>
+<h1>Container Orchestration with Kubernetes</h1>
+</p>
+    
+<p><hr>
+<br>Report Due: 11/16 (Sun.), by the end of the day (Chicago time)
+<br>Late submissions will NOT be graded
+</center>
+</p>
+
+<hr><a name="objective" class="section">
+I. Objective</a>
+
+<p>
+In this project, you will learn the basics of Kubernetes (K8s),
+a popular open-source container orchestration platform
+for cluster computing.
+We'll migrate our Cassandra cluster based on Docker Compose
+from Project 3 to K8s using a Service and a StatefulSet,
+and then update our writer program into a stateless application
+using a K8s Deployment that depends on the Cassandra service.
+</p>
+
+<p>
+While K8s usually runs on a cluster of nodes
+that are physical servers or VMs in production,
+we'll create a local K8s cluster with the
+<a href="https://kind.sigs.k8s.io/">kind</a> tool,
+which allows to use Docker container as nodes.
+In other words, we will have "nested" containers
+managed by K8s running within Docker containers.
+On the other hand, since we still manage the local K8s
+cluster through standard K8s tools like kubectl,
+all configurations are ready to be deployed into
+a cluster of physical servers or VMs, either on-premises
+or in cloud.
+</p>
+
+<hr><a name="kind" class="section">
+II. kind Cluster Setup</a>
+
+<p>
+Please create a new VM by importing
+our VM Appliance, make a clone of the repository (or fork it first)
+<a href="https://github.com/wngjia/ece573-prj04.git">
+https://github.com/wngjia/ece573-prj04.git</a>,
+and execute setup_vm.sh to setup the VM as needed.
+This setup_vm.sh is different than the one we used
+in Project 2 and Project 3 so you are encouraged
+to use a new VM to avoid any potential issues.
+</p>
+
+<p>
+The cluster.yml script defines a cluster of 5 nodes
+for kind with one node for the control plane
+and four as worker nodes.
+Use <span class="command">kind create cluster</span>
+to create the cluster with the default name "kind".
+Note that you will need to specify the configuration
+via the option <span class="command">--config</span>
+as follows.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ kind create cluster --config cluster.yml
+Creating cluster "kind" ...
+ ✓ Ensuring node image (kindest/node:v1.27.3) 🖼 
+ ✓ Preparing nodes 📦 📦 📦 📦 📦  
+ ✓ Writing configuration 📜 
+ ✓ Starting control-plane 🕹️ 
+ ✓ Installing CNI 🔌 
+ ✓ Installing StorageClass 💾 
+ ✓ Joining worker nodes 🚜 
+Set kubectl context to "kind-kind"
+You can now use your cluster with:
+
+kubectl cluster-info --context kind-kind
+
+Have a nice day! 👋
+</pre>
+It will take sometime to complete and then you can
+verify that the cluster is running by <span class="command">kind get nodes</span>
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ kind get nodes
+kind-worker3
+kind-worker2
+kind-worker4
+kind-worker
+kind-control-plane
+</pre>
+</p>
+
+<p>
+Running <span class="command">docker ps</span>
+reveals that these nodes are indeed Docker containers.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ docker ps
+CONTAINER ID   IMAGE                  ...   CREATED         STATUS         ...   NAMES
+1398729f7693   kindest/node:v1.27.3   ...   3 minutes ago   Up 3 minutes   ...   kind-worker3
+5496bd439977   kindest/node:v1.27.3   ...   3 minutes ago   Up 3 minutes   ...   kind-worker2
+da274d11a3d0   kindest/node:v1.27.3   ...   3 minutes ago   Up 3 minutes   ...   kind-worker4
+9000a05f1571   kindest/node:v1.27.3   ...   3 minutes ago   Up 3 minutes   ...   kind-worker
+4a1b57aeecda   kindest/node:v1.27.3   ...   3 minutes ago   Up 3 minutes   ...   kind-control-plane
+</pre>
+K8s tools are available in these containers. For example,
+<span class="command">crictl</span> manages containers for K8s
+and works like the <span class="command">docker</span> commands
+we are familiar with. Executing <span class="command">crictl ps</span>
+on a worker node shows what K8s containers are running inside.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ docker exec -it kind-worker crictl ps
+CONTAINER      ...  CREATED         STATE    NAME         ATTEMPT  ...  POD
+5cdee15784e39  ...  10 minutes ago  Running  kindnet-cni  0        ...  kindnet-2lgdt
+333a3729604e1  ...  10 minutes ago  Running  kube-proxy   0        ...  kube-proxy-pgbrw
+</pre>
+</p>
+
+<p>
+Use <span class="command">kind delete cluster</span>
+to delete the cluster.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ kind delete cluster
+Deleting cluster "kind" ...
+Deleted nodes: ["kind-worker3" "kind-worker2" "kind-worker4" "kind-worker" "kind-control-plane"]
+</pre>
+</p>
+
+<p>
+Here is what you need to do for this section.
+You'll need to provide answers and screenshots
+as necessary in the project reports.
+  <ul>
+  <li>Modify cluster.yml to include 6 worker nodes.
+  Create the cluster and verify that it is running.</li>
+  <li>Run <span class="command">crictl ps</span>
+  in the control plane node to show K8s containers running
+  inside. Name two K8s control plane components from the list.</li>
+  </ul>
+</p>
+
+<hr><a name="cassandra" class="section">
+III. The Cassandra Service</a>
+
+<p>
+Next, we will deploy a Cassandra service to the K8s cluster,
+leveraging our previous experiences with Cassandra from Project 3.
+The K8s configuration file cassandra.yml defines
+two objects: a Service named cassandra-service
+and a StatefulSet of 3 Pods of Cassandra replicas
+for the Cassandra service.
+</p>
+
+<p>
+Note that K8s will ask each pod to pull the Cassandra Docker image,
+which may cause network congestions.
+To avoid such issues and to streamline cluster creation,
+we use the script file reset_cluster.sh to automate the process.
+It will pull the necessary images, delete any existing kind cluster,
+create a new one with the cluster.yml script, and load images into nodes.
+It may take sometime to complete so please be patient.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ ./reset_cluster.sh
+...
+Deleting cluster "kind" ...
+Deleted nodes: ["kind-worker3" "kind-worker2" "kind-worker" "kind-worker4" "kind-control-plane"]
+Creating cluster "kind" ...
+ ✓ Ensuring node image (kindest/node:v1.30.0) 🖼
+...
+Image: "cassandra:4.1.3" with ID "sha256:c5a661a601b9297c727a7e4f0f330eef30ba06af1b8be0b8ca48f64eb6416e19" not yet present on node "kind-worker", loading...
+...
+</pre>
+</p>
+
+<p>
+Use <span class="command">kubectl apply</span>
+to apply the configuration file via the option
+<span class="command">-f</span>
+as follows.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ kubectl apply -f cassandra.yml 
+service/cassandra-service created
+statefulset.apps/cassandra created
+</pre>
+Then use <span class="command">kubectl get</span>
+to verify the status of the objects.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ kubectl get services
+NAME                TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
+cassandra-service   ClusterIP   None         <none>        9042/TCP   110s
+kubernetes          ClusterIP   10.96.0.1    <none>        443/TCP    4m42s
+ubuntu@ece573:~/ece573-prj04$ kubectl get statefulsets
+NAME        READY   AGE
+cassandra   1/3     2m3s
+ubuntu@ece573:~/ece573-prj04$ kubectl get pods
+NAME          READY   STATUS              RESTARTS   AGE
+cassandra-0   1/1     Running             0          2m8s
+cassandra-1   0/1     ContainerCreating   0          48s
+</pre>
+Note that K8s starts the Pods in a StatefulSet one after another.
+It will take some time for all Pods to become available.
+</p>
+
+<p>
+Similar to Project 3, we can validate that Cassandra is actually
+running properly by <span class="command">nodetool status</span>
+and <span class="command">cqlsh</span>. Since these
+commands need to run from the Cassandra containers
+within the Docker container nodes,
+<span class="command">kubectl exec</span> that allows
+you to execute commands within a Pod is very convenient.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ kubectl exec cassandra-0 -- nodetool status
+Datacenter: datacenter1
+=======================
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load        Tokens  Owns (effective)  Host ID                               Rack 
+UN  10.244.3.3  70.24 KiB   16      59.3%             58ca0279-0b50-4033-901c-e00dfcdc75f6  rack1
+UN  10.244.2.3  75.26 KiB   16      76.0%             d69e38d7-9bd7-4774-b855-fb65d6b3c77f  rack1
+UN  10.244.4.3  109.41 KiB  16      64.7%             419f17ed-63d9-4f2a-96af-f8e1a33313d0  rack1
+
+ubuntu@ece573:~/ece573-prj04$ kubectl exec -it cassandra-0 -- cqlsh
+Connected to ece573-prj04 at 127.0.0.1:9042
+[cqlsh 6.1.0 | Cassandra 4.1.3 | CQL spec 3.4.6 | Native protocol v5]
+Use HELP for help.
+cqlsh> exit
+</pre>
+</p>
+
+<p>
+Use <span class="command">kubectl delete</span>
+to remove the Cassandra service and its Pods as follows.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ kubectl delete -f cassandra.yml 
+service "cassandra-service" deleted
+statefulset.apps "cassandra" deleted
+</pre>
+</p>
+
+<p>
+Here is what you need to do for this section.
+You'll need to provide answers and screenshots
+as necessary in the project reports.
+  <ul>
+  <li>Modify cassandra.yml to include 5 Cassandra replicas.
+  Create the service and verify that Cassandra is running properly.</li>
+  <li>Explain the "resources" section for the cassandra container
+  from cassandra.yml . What are the difference between "limits" and "requests"?</li>
+  <li>Below the "resources" section you will find the section "env"
+  to setup environment variables. Where was the corresponding part
+  for Project 3? Explain the difference between the two.</li>
+  <li>How does the Cassandra service know which Pods are
+  part of the service?</li>
+  </ul>
+</p>
+
+<hr><a name="application" class="section">
+IV. Build and Deploy an Application</a>
+
+<p>
+Once the Cassandra service is running,
+we are ready to create K8s Deployments
+of applications to utilize it.
+We will use a modified version of writer.go
+from Project 3 as the example.
+</p>
+
+<p>
+The application need to be containerized before K8s can deploy it.
+Unlike Docker Compose that takes care of containerization
+automatically in Project 3, here we need to go through
+two steps: first to build a docker image for writer.go,
+and second to make the image available to the K8s cluster.
+For your convenience, we provide build.sh to complete these
+two steps. Note that while the second step is usually
+completed by using a Docker registry in production,
+we allow kind to load the images to the container nodes directly
+for simplicity.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ ./build.sh
+[+] Building 72.2s (10/10) FINISHED        docker:default
+...
+Image: "ece573-prj04-writer:v1" with ID "..." not yet present on node "kind-worker2", loading...
+</pre>
+</p>
+
+<p>
+The configuration file writer.yml defines the K8s Deployment
+ece573-prj04-writer that includes one replica
+using the docker image built above. Apply it to start
+the application and then verify the status.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ kubectl apply -f writer.yml 
+deployment.apps/ece573-prj04-writer created
+ubuntu@ece573:~/ece573-prj04$ kubectl get deployment
+NAME                  READY   UP-TO-DATE   AVAILABLE   AGE
+ece573-prj04-writer   0/1     1            0           77s
+ubuntu@ece573:~/ece573-prj04$ kubectl get pods
+NAME                                   READY   STATUS             RESTARTS      AGE
+cassandra-0                            1/1     Running            0             64m
+cassandra-1                            1/1     Running            0             64m
+cassandra-2                            1/1     Running            0             64m
+ece573-prj04-writer-7bcccffd6d-2s87k   0/1     CrashLoopBackOff   3 (32s ago)   88s
+</pre>
+Do you notice that something is wrong with our writer application?
+</p>
+
+<p>
+Similar to <span class="command">docker logs</span>,
+you can troubleshoot issues with Pods with
+<span class="command">kubectl logs</span>.
+However, since Pods from Deployment are interchangeable
+replicas, their names will change frequently and it is
+not convenient to refer to them by names.
+Instead, we can refer to them by labels as specified
+in writer.yml via the option <span class="command">-l</span>
+as follows.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ kubectl logs -l app=ece573-prj04-writer
+2023/10/22 05:56:54 Unknown topic
+</pre>
+Read writer.go and modify writer.yml to use a topic of your choice.
+Since we don't modify writer.go, it is sufficient
+to apply writer.yml again to restart the failing Pod.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ kubectl apply -f writer.yml 
+deployment.apps/ece573-prj04-writer configured
+</pre>
+Resolve any remaining issue, apply the configuration,
+and you should be able to follow the log via
+the option <span class="command">-f</span>.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ kubectl logs -l app=ece573-prj04-writer -f
+2023/10/22 06:04:13 Connecting cluster at cassandra-service.default.svc.cluster.local with consistency ONE for topic test
+2023/10/22 06:04:14 Connected to cluster ece573-prj04
+2023/10/22 06:04:14 Tables ece573.prj04 and ece573.prj04_last_seq ready.
+2023/10/22 06:04:14 test: start from lastSeq=0
+2023/10/22 06:04:49 test: inserted rows to seq 1000
+2023/10/22 06:05:25 test: inserted rows to seq 2000
+2023/10/22 06:06:06 test: inserted rows to seq 3000
+</pre>
+</p>
+
+<p>
+The <span class="command">kubectl delete</span> can be used
+to delete individual Pods to simulate a situation where Pods
+fail.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ kubectl delete pod cassandra-1
+pod "cassandra-1" deleted
+ubuntu@ece573:~/ece573-prj04$ kubectl get pods
+NAME                                  READY   STATUS    RESTARTS        AGE
+cassandra-0                           1/1     Running   0               47s
+cassandra-1                           1/1     Running   0               2s
+cassandra-2                           1/1     Running   2 (3m50s ago)   13h
+ece573-prj04-writer-c447759b7-t6gqj   1/1     Running   2 (17s ago)     2m46s
+</pre>
+But if you run <span class="command">kubectl get pods</span>,
+you will find the Pod is still there running. Why?
+The reason is that since you don't delete the StatefulSet,
+K8s will detect such failures and restart Pods as needed.
+As shown in the AGE column of the Pod cassandra-1,
+it restarts from 2s ago.
+On the other hand, the RESTARTS column doesn't count
+our manual delete so it shows 0. However,
+for the Pod of our writer, you may notice it has been
+restarted since 17s ago. It doesn't have the retrying logic
+you are supposed to add for Project 3. Therefore, it may fail
+when a Cassandra Pod fails -- but K8s restarts it automatically.
+</p>
+
+<p>
+Here is what you need to do for this section.
+You'll need to provide answers and screenshots
+as necessary in the project reports.
+  <ul>
+  <li>Correct writer.yml as mentioned above
+  and verify everying is running properly.</li>
+  <li>How does the writer deployment connect
+  to the Cassandra service? In particular,
+  where does "cassandra-service.default.svc.cluster.local" come from?</li>
+  <li>We add retrying logic to the writer program in Project 3.
+  Do we need it for Project 4?</li>
+  </ul>
+</p>
+
+<hr><a name="stateless" class="section">
+V. Stateless Application</a>
+
+<p>
+Our writer.go always writes from seq=1 when restarted.
+Can we have a writer that writes from the seq when
+it terminates the last time?
+Since K8s Deployment uses ReplicaSet that is stateless,
+we cannot ask writer.go to store what seq it has reached
+and load the last when restarting.
+Instead, we must store and then load it from Cassandra.
+We have already modified writer.go to create a new table
+ece573.prj04_last_seq in Cassandra and store the last seq
+into it inside the loop.
+You will need to modify the code to read the last seq
+from the table before the loop so that it can be used
+to initialize the loop.
+Note that since you will need to modify writer.go this time,
+you have to build and load the docker image again,
+and then tell K8s to use the new image.
+For simplicity, these steps can be done
+by running <span class="command">./build.sh</span>
+first, and then using <span class="command">kubectl delete</span>
+and <span class="command">kubectl apply</span> to recreate
+the writer deployment from scratch.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj04$ ./build.sh 
+[+] Building 10.3s (10/10) FINISHED         docker:default
+...
+ubuntu@ece573:~/ece573-prj04$ kubectl delete -f writer.yml 
+deployment.apps "ece573-prj04-writer" deleted
+ubuntu@ece573:~/ece573-prj04$ kubectl apply -f writer.yml 
+deployment.apps/ece573-prj04-writer created
+ubuntu@ece573:~/ece573-prj04$ kubectl logs -l app=ece573-prj04-writer -f
+2023/10/22 19:03:12 Connecting cluster at cassandra-service.default.svc.cluster.local with consistency ONE for topic test
+2023/10/22 19:03:22 Connected to cluster ece573-prj04
+2023/10/22 19:03:22 Tables ece573.prj04 and ece573.prj04_last_seq ready.
+2023/10/22 19:03:22 test: start from lastSeq=0
+2023/10/22 19:03:30 test: inserted rows to seq 1000
+^C
+</pre>
+</p>
+
+<p>
+Here is what you need to do for this section.
+You'll need to provide answers and screenshots
+as necessary in the project reports.
+  <ul>
+  <li>Modify writer.go as mentioned above
+  and verify everying is running properly.
+  You will need to delete Pods to trigger
+  writer to restart and show log messages
+  indicating lastSeq reading from Cassandra.</li>
+  <li>What happens if consistency is broken so that
+  the writer doesn't obtain the most recent last seq?
+  Will this cause an issue for the writer?</li>
+  </ul>
+</p>
+
+<hr><a name="report" class="section">
+VI. Project Deliverables</a>
+
+<p>
+Complete the tasks for Section II to V (5 points each),
+include them in a project report in .doc/.docs or .pdf format,
+and submit it to Canvas before the deadline.
+</p>
+
+</body>
+</html>

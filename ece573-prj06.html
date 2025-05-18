@@ -1,0 +1,311 @@
+<html>
+<head>
+<link rel="stylesheet" type="text/css" href="course.css">
+<title>ECE 473/573 Fall 2025 - Project 6</title>
+</head>
+<body>
+
+<center>
+<p>
+<h1>ECE 473/573 Fall 2025 - Project 6</h1>
+<h1>Chaos Engineering</h1>
+</p>
+    
+<p><hr>
+<br>Report Due: 12/10 (Wed.), by the end of the day (Chicago time)
+<br>Late submissions will NOT be graded
+</center>
+</p>
+
+<hr><a name="objective" class="section">
+I. Objective</a>
+
+<p>
+In this project, you will learn the basics of Chaos Engineering,
+a systematic approach to inject faults into cloud computing systems
+to understand, test, and build better services when faults are presented.
+We'll introduce the Chaos Mesh platform that running on top of
+Kubernetes (K8s) and further explore the Kafka cluster to understand
+its bebavior when faults are injected.
+</p>
+
+<hr><a name="chaos" class="section">
+II. Chaos Engineering with Chaos Mesh</a>
+
+<p>
+A fault resilient service designed to survive failures needs to
+be tested before deployment since it will be too late
+to fix bugs or revise options and algorithms when failures actually happen.
+Testing such services will require us to inject faults into
+the underlying system. However, doing so in an ad-hoc manner,
+like to kill and restart a Docker container in our Project 3 and 4,
+will lead to issues that prevent us to reproduce the situation
+for troubleshooting and improvements. On one hand, faulty behaviors
+are not all the same on different systems. For example,
+one cannot simply kill a Pod in K8s to mimic the behavior when a Docker
+container is killed since K8s will automatically restart the Pod.
+On the other hand, when faults are injected into a system manually,
+even with a detailed step-by-step instruction, it is difficult
+to reproduce the situation if faults need to follow certain schedule,
+not to mention people may make mistakes.
+</p>
+
+<p>
+Chaos engineering takes a systematic approach for fault injection.
+Fault types are standardized and scripts are introduced
+to define the fault injection process, with the added benefit
+of allowing version control. In this project, we will learn to use Chaos Mesh,
+an open-source Chaos engineering platform running in K8s clusters.
+</p>
+<p>
+(Skip for offline version)
+Please create a new VM by importing
+our VM Appliance, make a clone of the repository (or fork it first)
+<a href="https://github.com/wngjia/ece573-prj06.git">
+https://github.com/wngjia/ece573-prj06.git</a>,
+and execute setup_vm.sh to setup the VM as needed.
+Since the setup_vm.sh is the same as that of Project 5,
+you may choose to reuse the VM for Project 5 this time.
+</p>
+
+<p>
+The script file reset_cluster.sh is used to streamline the installation
+of Chaos Mesh to our K8s cluster built with kind, avoiding potential
+issues like asking all nodes to pull large Chaos Mesh Docker images
+at the same time.
+It will pull the necessary images, delete any existing kind cluster,
+create a new one with the cluster.yml script, load images into nodes,
+and install and start Chaos Mesh inside the cluster.
+Nevertheless, it will still take quite sometime to complete so please
+be patient.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj06$ ./reset_cluster.sh 
+v2.6.2: Pulling from chaos-mesh/chaos-mesh
+...
+Deleting cluster "kind" ...
+Deleted nodes: ["kind-worker4" "kind-control-plane" "kind-worker3" "kind-worker2" "kind-worker"]
+Creating cluster "kind" ...
+ ✓ Ensuring node image (kindest/node:v1.27.3) 🖼 
+...
+Thanks for using kind! 😊
+Image: "ghcr.io/chaos-mesh/chaos-mesh:v2.6.2" with ID "sha256:2c20419ba46d2a7a57403e6a9f15c8da6744878f564f8f4a3023284a58e2ff3c" not yet present on node "kind-worker3", loading...
+...
+Install Chaos Mesh chaos-mesh
+...
+Waiting for pod running
+Chaos Mesh chaos-mesh is installed successfully
+</pre>
+Once completed, you can verify that everything is running by
+<span class="command">kind get nodes</span>
+and <span class="command">kubectl get</span>
+<pre class="console">
+ubuntu@ece573:~/ece573-prj06$ kind get nodes
+kind-worker3
+kind-worker
+kind-worker2
+kind-worker4
+kind-control-plane
+ubuntu@ece573:~/ece573-prj06$ kubectl get pods -n chaos-mesh
+NAME                                      READY   STATUS    RESTARTS   AGE
+chaos-controller-manager-95997648-cxkrm   1/1     Running   0          72s
+chaos-controller-manager-95997648-jbqb6   1/1     Running   0          72s
+chaos-controller-manager-95997648-kbdt8   1/1     Running   0          72s
+chaos-daemon-fv6pl                        1/1     Running   0          72s
+chaos-daemon-p8m9p                        1/1     Running   0          72s
+chaos-daemon-swsqg                        1/1     Running   0          72s
+chaos-daemon-wl24g                        1/1     Running   0          72s
+chaos-dashboard-5dd6c987fb-wz49q          1/1     Running   0          72s
+chaos-dns-server-785cc6db5f-hkprz         1/1     Running   0          72s
+ubuntu@ece573:~/ece573-prj06$ kubectl get services -n chaos-mesh
+NAME                            TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)                                 AGE
+chaos-daemon                    ClusterIP   None            <none>        31767/TCP,31766/TCP                     82s
+chaos-dashboard                 NodePort    10.96.34.133    <none>        2333:31647/TCP,2334:30383/TCP           82s
+chaos-mesh-controller-manager   ClusterIP   10.96.66.160    <none>        443/TCP,10081/TCP,10082/TCP,10080/TCP   81s
+chaos-mesh-dns-server           ClusterIP   10.96.163.163   <none>        53/UDP,53/TCP,9153/TCP,9288/TCP         81s
+</pre>
+Note that all Chaos Mesh pods stay in their own namespace
+chaos-mesh so we need to specify so with <span class="command">kubectl get</span>
+</p>
+
+<p>
+The output above indicates that Chaos Mesh comes with a dashboard service.
+Usually, dashboard services provide web apps to simplify management and visualization.
+How can we access it from a browser? Indeed, since the K8s Pod providing
+the service runs inside the cluster, which then runs inside the linux VM,
+we will need to bring the connection from the cluster to the VM first,
+and then from the VM to the host, e.g. your laptop, so the browser can access it.
+Use <span class="command">kubectl port-forward</span> to forward the service
+to the VM.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj06$ kubectl port-forward -n chaos-mesh services/chaos-dashboard 2333
+Forwarding from 127.0.0.1:2333 -> 2333
+Forwarding from [::1]:2333 -> 2333
+</pre>
+Then, in VSCode, besides TERMINAL, you should be able to find the PORTS tab
+that forwards the port 2333 from the VM to the host. If the port is not forwarded
+automatically there you can add it manually. Open your browser and point to
+localhost:2333 you should be able to see the dashboard.
+You may use CTRL-C to terminate <span class="command">kubectl port-forward</span>,
+which will also disconnect your browser connection, though the dashboard service
+will keep running so you can still connect in future.
+</p>
+
+<p>
+Here is what you need to do for this section.
+You'll need to provide answers and screenshots
+as necessary in the project reports.
+  <ul>
+  <li>What are the Pods used by Chaos Mesh?
+  Make an educated guess about their functionalities.</li>
+  <li>Instead of searching online, where are you going to
+  find the service name and port required by
+  <span class="command">kubectl port-forward</span>?</li>
+  </ul>
+</p>
+
+<hr><a name="pod" class="section">
+III. Pod Faults</a>
+
+<p>
+Start Kafka and then build and start our clients.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj06$ kubectl apply -f kafka.yml 
+service/zookeeper-service created
+service/kafka-service created
+statefulset.apps/zookeeper created
+statefulset.apps/kafka created
+ubuntu@ece573:~/ece573-prj06$ ./build.sh 
+...
+Image: "ece573-prj06-clients:v1" with ID "sha256:87178954ab37db923448f7a0d29b839ee4cc711fccdb8dd791ad91f81012e76a" not yet present on node "kind-control-plane", loading...
+ubuntu@ece573:~/ece573-prj06$ kubectl apply -f clients.yml 
+deployment.apps/ece573-prj06-producer created
+deployment.apps/ece573-prj06-consumer created
+</pre>
+Check the logs after a while to verify that producer and consumer are running.
+<pre class="console">
+buntu@ece573:~/ece573-prj06$ kubectl logs -l app=ece573-prj06-producer
+2023/11/11 05:04:54 test: start publishing messages to kafka-0.kafka-service.default.svc.cluster.local:9092
+2023/11/11 05:05:19 test: 1000 messages published
+2023/11/11 05:05:36 test: 2000 messages published
+2023/11/11 05:05:49 test: 3000 messages published
+2023/11/11 05:06:00 test: 4000 messages published
+2023/11/11 05:06:11 test: 5000 messages published
+2023/11/11 05:06:21 test: 6000 messages published
+ubuntu@ece573:~/ece573-prj06$ kubectl logs -l app=ece573-prj06-consumer
+2023/11/11 05:04:58 test: start receiving messages from kafka-1.kafka-service.default.svc.cluster.local:9092
+2023/11/11 05:06:00 test: received 1000 messages, last (0.356500)
+</pre>
+Now we have some data in our cluster to experiment with
+so we can remove our producer and consumer to preserve resources.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj06$ kubectl delete -f clients.yml
+deployment.apps "ece573-prj06-producer" deleted
+deployment.apps "ece573-prj06-consumer" deleted
+</pre>
+</p>
+
+<p>
+Inspect the details of the topic test.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj06$ kubectl exec kafka-0 -- kafka-topics --bootstrap-server localhost:9092 --describe test
+Topic: test     TopicId: FoN4I2OFRiuJMYfRuv1fvg PartitionCount: 4       ReplicationFactor: 3    Configs: 
+        Topic: test     Partition: 0    Leader: 1       Replicas: 1,0,2 Isr: 1,0,2
+        Topic: test     Partition: 1    Leader: 0       Replicas: 0,2,1 Isr: 0,2,1
+        Topic: test     Partition: 2    Leader: 2       Replicas: 2,1,0 Isr: 2,1,0
+        Topic: test     Partition: 3    Leader: 1       Replicas: 1,2,0 Isr: 1,2,0
+</pre>
+Pay attention to Leader, Replicas, and Isr for each partition.
+Messages belong to a partition are written to its leader first.
+Then, they are replicated to replicas. Since it takes time
+for replication to complete and producers may continue to write more messages,
+not all replicas contain all messages up-to-date.
+In-sync replicas (Isr) indicate which replicas have up-to-date messages.
+</p>
+
+<p>
+What happen to messages if Pods fails? To inject a fault into the cluster
+using Chaos Mesh, one can either create an experiment from the Web dashboard,
+or take a more systematic approach to create a script and apply it.
+Take a look into pod-failure.yml which defines a Pod fault (kind: PodChaos)
+that will cause pod failures (action: pod-failure).
+It also defines details parameters like 2 Pods will fail for 3600s (one hour).
+While usually we don't experiment with faults lasting one hour,
+this setting helps us to learn to investigate faults better by
+allowing to remove them manually later.
+Apply the fault and observe how Kafka adapts.
+Make sure to run <span class="command">kafka-topics</span>
+on the Pod that is not affected as Chaos Mesh will inject faults
+to two randomly chosen Pods.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj06$ kubectl apply -f pod-failure.yml 
+podchaos.chaos-mesh.org/pod-failure created
+ubuntu@ece573:~/ece573-prj06$ kubectl get pods
+NAME          READY   STATUS              RESTARTS     AGE
+kafka-0       0/1     RunContainerError   3 (9s ago)   25m
+kafka-1       0/1     RunContainerError   3 (5s ago)   25m
+kafka-2       1/1     Running             0            24m
+zookeeper-0   1/1     Running             0            25m
+ubuntu@ece573:~/ece573-prj06$ kubectl exec kafka-2 -- kafka-topics --bootstrap-server localhost:9092 --describe test
+Topic: test     TopicId: FoN4I2OFRiuJMYfRuv1fvg PartitionCount: 4       ReplicationFactor: 3    Configs: 
+        Topic: test     Partition: 0    Leader: 2       Replicas: 1,0,2 Isr: 2
+        Topic: test     Partition: 1    Leader: 2       Replicas: 0,2,1 Isr: 2
+        Topic: test     Partition: 2    Leader: 2       Replicas: 2,1,0 Isr: 2
+        Topic: test     Partition: 3    Leader: 2       Replicas: 1,2,0 Isr: 2
+</pre>
+So Kafka is aware of the faults and moves all leaders to 2 and marks 2 as the only
+available Isr.
+</p>
+
+<p>
+Remove the fault. Observe Kafka again after a while.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj06$ kubectl delete -f pod-failure.yml 
+podchaos.chaos-mesh.org "pod-failure" deleted
+ubuntu@ece573:~/ece573-prj06$ kubectl get pods
+NAME          READY   STATUS    RESTARTS        AGE
+kafka-0       1/1     Running   8 (7s ago)      31m
+kafka-1       1/1     Running   7 (2m51s ago)   30m
+kafka-2       1/1     Running   0               30m
+zookeeper-0   1/1     Running   0               31m
+ubuntu@ece573:~/ece573-prj06$ kubectl exec kafka-2 -- kafka-topics --bootstrap-server localhost:9092 --describe test
+Topic: test     TopicId: FoN4I2OFRiuJMYfRuv1fvg PartitionCount: 4       ReplicationFactor: 3    Configs: 
+        Topic: test     Partition: 0    Leader: 2       Replicas: 1,0,2 Isr: 2,1,0
+        Topic: test     Partition: 1    Leader: 2       Replicas: 0,2,1 Isr: 2,1,0
+        Topic: test     Partition: 2    Leader: 2       Replicas: 2,1,0 Isr: 2,1,0
+        Topic: test     Partition: 3    Leader: 2       Replicas: 1,2,0 Isr: 2,1,0
+</pre>
+All the Isrs are back, though leaders are not re-elected (yet).
+</p>
+
+<p>
+Here is what you need to do for this section.
+You'll need to provide answers and screenshots
+as necessary in the project reports.
+  <ul>
+  <li>In pod-failure.yml, which part defines where the faults happen?
+  I.e. how to define which Pods are affected?</li>
+  <li>Read pod-kill.yml and perform an experiment with it using
+  <span class="command">kubectl apply</span> and
+  <span class="command">kubectl delete</span>.
+  Explain how Kafka reacts to this fault.</li>
+  <li>What is the difference from the two fault types pod-failure and pod-kill?</li>
+  <li>Use <span class="command">kubectl apply</span> to inject pod-failure.yml again
+  and then start the clients.
+  Are producer and consumer working properly? Modify clients.yml
+  so the clients can work when two random Kafka Pods fail.
+  Don't forget to remove the fault by <span class="command">kubectl delete</span>
+  before you would like to inject it again.</li>
+  </ul>
+</p>
+
+<hr><a name="report" class="section">
+IV. Project Deliverables</a>
+
+<p>
+Complete the tasks for Section II (5 points) and III (15 points),
+include them in a project report in .doc/.docs or .pdf format,
+and submit it to Canvas before the deadline.
+</p>
+
+</body>
+</html>

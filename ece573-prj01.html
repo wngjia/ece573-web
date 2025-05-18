@@ -1,0 +1,412 @@
+<html>
+<head>
+<link rel="stylesheet" type="text/css" href="course.css">
+<title>ECE 473/573 Fall 2025 - Project 1</title>
+</head>
+<body>
+
+<center>
+<p>
+<h1>ECE 473/573 Fall 2025 - Project 1</h1>
+<h1>Virtual Machines and Containers</h1>
+</p>
+    
+<p><hr>
+<br>Report Due: 09/14 (Sun.), by the end of the day (Chicago time)
+<br>Late submissions will NOT be graded
+</center>
+</p>
+
+<hr><a name="objective" class="section">
+I. Objective</a>
+
+<p>
+In this project, you will learn basic steps to setup environments
+for software development and deployment using virtual machines (VM)
+and containers.
+</p>
+
+<hr><a name="vm" class="section">
+II. Virtual Machine Setup</a>
+
+<p>
+Since our provisioning scripts use prebuilt binary packages and container images
+that only run on x64 (Intel/AMD) processors,
+we recommend to use a recent Windows computer with at least
+4 CPU cores, 16GB memory, and 512GB SSD.
+<span class="emph">
+If you are using ARM-based computers (Apple MacBooks, Raspberry Pi's, etc.)
+or your computers are more than 5 years old, please consider buying
+a new Windows computer as mentioned earlier.
+</span>
+Alternatively, you may rent a x64 Ubuntu server from cloud providers
+and follow instructions in the next section,
+though we are not responsible for any cost incurred and we cannot
+provide support for any tech issues.
+</p>
+
+<p>
+Install the most recent version of
+<a href="https://www.virtualbox.org/">VirtualBox</a> on your computer.
+You will need to
+<a href="https://www.quora.com/How-do-I-enable-hardware-virtualization-in-Windows-10-and-how-do-I-resolve-the-following-error-message-in-Android-Studio-1-3-1-%E2%80%9CHAX-kernel-module-is-not-installed%E2%80%9D">
+turn on hardware virtualization</a>
+if you haven't done so already.
+</p>
+
+<p>
+Download the VM Appliance
+<a href="https://iit0-my.sharepoint.com/:u:/g/personal/jwang34_illinoistech_edu/ESOIUoQg1LtNuwlZM-CjZHMBH8N-6N6WUE5-oZWCSxDuyA">
+IIT-ECE573.ova</a>
+and double-click to install/import. Make sure the file is downloaded
+completely with the size of 1,744,280,576 bytes and verify the integrity if possible.
+  <ul>
+  <li>MD5:     7e3474b4eed8392bf8a235f54e14aefa </li>
+  <li>SHA-256: 075186bdbf4bcc2988cce46acad38e993fcf8f84b35e801c6a0b5a0495390c01 </li>
+  </ul>
+Please keep this .ova file as we will need to use it throughout the semester
+for other projects.
+</p>
+
+<p>
+Choose the installed VM and click 'Settings'.
+Choose 'Network' and click 'Advanced' from 'Adapter 1'.
+Click 'Port Forwarding' to bring up 'Port Forwarding Rules'.
+You should be able to see a mapping from 'Guest Port' 22
+to 'Host Port' 57322. If not, you should setup the rule by yourself.
+</p>
+
+<p>
+Start the VM. After a while, it would display the login screen.
+While you could login here,
+it is much more convenient to access the VM using SSH
+as introduced next.
+</p>
+
+<hr><a name="server" class="section">
+III. Ubuntu Server Setup</a>
+
+<p>
+Alternatively, if you are familiar with linux server administration and cloud computing,
+you may use your own Ubuntu server or a Ubuntu server instance rented from a cloud provider.
+Please follow the instructions below but be advised that
+<span class="emph">
+we are not responsible for any cost incurred and we cannot
+provide support for any tech issues.
+</span>
+In addition, you will be required to use the VirtualBox VM above if issues persist.
+<ol>
+  <li>Prepare your server to have at least 4 CPU cores, 8GB memory, and 100GB storage.</li>
+  <li>Install Ubuntu 20.04 LTS x64: for cloud instances, pick exactly this version;
+  otherwise, download and install the Server install image from 
+  <a href="https://releases.ubuntu.com/20.04/">here</a>.</li>
+  <li>It is better to NOT use the root user directly.
+  Create a user with a strong password. You may further
+  disable the password and use SSH key pairs for best security.</li>
+  <li>Figure out the IP address and the port for your Ubuntu server,
+  follow the instructions in the next section to access the instance,
+  then download and exectue our provisioning script.</li>
+  <li>
+  <span class="emph">
+  To save the cost, you may destroy the instance once you are done with the project.
+  </span>
+  </li>
+</ol>
+</p>
+
+<hr><a name="ssh" class="section">
+IV. Access Remote Instances via SSH</a>
+
+<p>
+Managing computing resources rented from a cloud provider,
+e.g. a virtual private server (VPS), is not very different
+from managing your VM that is currently running on your
+own computer given you are using a proper set of tools.
+In this section, we will introduce you to remote access
+tools that depend on the SSH protocol.
+These tools provide terminal access to instances
+where you can execute shell commands.
+Here are some tutorials that you should go through if you are not familiar
+with Linux systems:
+<ul>
+  <li>
+  Basic Linux usage: Chapter 1 to 8 from
+  <a href="https://ryanstutorials.net/linuxtutorial/">Linux Tutorial</a>.
+  </li>
+  <li>
+  Text editor: vi/Vim (<a href="https://linuxconfig.org/vim-tutorial">Vim Tutorial</a>)
+  are prefered since they are available from most installations.
+  Professionals also use Emacs that need to be installed first
+  (<a href="https://tldp.org/HOWTO/Emacs-Beginner-HOWTO.html">Emacs
+  Beginner's HOWTO</a>).
+  </li>
+</ul>
+</p>
+
+<p>
+Visual Studio Code (VS Code) is a code editor that can be extended
+into a powerful IDE by third-party extensions.
+Download <a href="https://code.visualstudio.com/">VS Code</a> and install as necessary.
+</p>
+
+<p>
+"Remote - SSH" is a widely used VS Code extension that makes it possible
+to perform development tasks on a remote instance using your
+favorite graphical user interface. You can follow
+<a href=""https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh">
+this link</a> to install it, or you can start VS Code
+and search for it in the Extensions panel from the left.
+</p>
+
+<p>
+Click the green "&gt;&lt;" button at the lower left corner
+to access remote window options in VS Code. Choose "Connect to Host..."
+and then enter "ubuntu@127.0.0.1:57322". A new VS Code window
+will open and asks you for the password. Once you type the password
+'ece573', you will be connected to the server. You can now
+access files by opening a folder and execute commands
+by opening a terminal. Sometimes you will need to type the password again.
+</p>
+
+<hr><a name="provision" class="section">
+V. Instance Provisioning</a>
+
+<p>
+Our VM, like most of the instances rented from cloud,
+only has a minimal set of software packages installed.
+It is up to you to install and configure packages
+as needed.
+</p>
+
+<p>
+"Pets vs. Cattle" refers to a methodology shift of server
+management for cloud computing from more traditional approaches.
+Traditionally, physical servers are treated as "pets". Each server
+has a particular role and their specific needs are met
+by installing and configuring software packages individually.
+Over the years, many of those packages will be updated
+so it is possible that one may lose track of what packages
+and what versions are actually installed.
+As a consequence, it is critical to ensure the health of
+these servers as it is very difficult to replace any.
+</p>
+
+<p>
+Server management takes the "cattle" approach for cloud
+computing so that a horde of servers can be easily
+managed and replaced. In this approach, we no longer have
+direct access to the physical server.
+Instead, the underlying computing resources are accessed
+via VM instances that can be created and destroyed.
+All provisioning tasks including installing and configuring
+software packages are automated by scripts. These scripts
+are further stored in a version control system like Git so
+that any instance can be reproduced exactly.
+</p>
+
+<p>
+Clone the repository on GitHub that holds scripts and source
+code for Project 1 by <span class="command">
+git clone https://github.com/wngjia/ece573-prj01.git</span>.
+<pre class="console">
+ubuntu@ece573:~$ git clone https://github.com/wngjia/ece573-prj01.git
+Cloning into 'ece573-prj01'...
+...
+</pre>
+</p>
+
+<p>
+Provision the instance with the script <span class="command">
+setup_vm.sh</span>.
+<pre class="console">
+ubuntu@ece573:~$ sudo ece573-prj01/setup_vm.sh
+...
+</pre>
+It will take a while to complete and you may need to type
+the password again.
+</p>
+
+<p>
+Now two software packages, Docker and Go, should be properly
+installed and configured, which can be verified
+by <span class="command">go version</span>
+and <span class="command">docker version</span>.
+<pre class="console">
+ubuntu@ece573:~$ go version
+go version go1.21.0 linux/amd64
+ubuntu@ece573:~$ docker version
+Client: Docker Engine - Community
+ Version:           26.1.2
+ API version:       1.45
+ Go version:        go1.21.10
+ Git commit:        211e74b
+ Built:             Wed May  8 13:59:58 2024
+ OS/Arch:           linux/amd64
+ Context:           default
+...
+</pre>
+</p>
+
+<hr><a name="docker" class="section">
+VI. Docker and Go</a>
+
+<p>
+Using scripts to automatically setup VM instances
+makes it possible to manage many instances efficiently.
+However, VMs are considered "heavy" as they would need
+to consume resources and take time to create and destroy.
+Docker provides access to containers, which can be
+treated as "lightweight virtual machines", that makes
+the use of resources more effective.
+</p>
+
+<p>
+Very similar to how we setup our VM instance, to use
+Docker you will need to start with some "docker images"
+that contain initial container setups. Then, you can
+create your own images by modifying existing ones,
+e.g. adding your own software.
+What is the point of all these complexities instead
+of just deploying your own software binary?
+The point is that all these images can be easily
+distributed to any instances supporting Docker
+and be executed in containers there reproducing
+the same behavior without the need to install
+any other packages your software may be depending on.
+In addition, once software packages are all deployed
+using Docker, it is possible to reproduce production
+environments in development settings, a very preferable
+approach for software developement and testing.
+</p>
+
+<p>
+Let's first obtain a docker image for building Go programs
+by <span class="command">docker pull</span>
+<pre class="console">
+ubuntu@ece573:~$ docker pull golang:1.21
+1.21: Pulling from library/golang
+...
+</pre>
+It will take some time to download and Docker will verify
+the integrity of the images.
+You can then inspect the images
+by <span class="command">docker images</span>
+<pre class="console">
+ubuntu@ece573:~$ docker images
+REPOSITORY   TAG       IMAGE ID       CREATED          SIZE
+golang       1.21      3758cb2c0a6b   6 days ago       814MB
+</pre>
+Note that we have installed Go to our VM instance that will be
+used by VS Code for Go development. This docker image is used
+to build Go programs as releases for deployment into
+testing and production environments.
+</p>
+
+<p>
+The preferable way to create your own images is to use
+a special script file named <span class="command">Dockerfile</span>.
+Similar to VM instances, use of scripts ensures that
+the images can be reproduced exactly if needed.
+Build your first Docker image by <span class="command">docker build</span>.
+You will need to supply a name for the image like "prj01"
+by the <span class="command">-t prj01</span> option, and then
+the directory <span class="command">ece573-prj01</span>
+that contains the Dockerfile.
+<pre class="console">
+ubuntu@ece573:~$ docker build -t prj01 ece573-prj01
+...
+ => => writing image sha256:2317a9ea6fc78ded75b8d10198fe593fd383c05a93a22dcbe81b1dac069a9e72      0.0s
+ => => naming to docker.io/library/prj01                                                          0.0s
+ubuntu@ece573:~$ docker images
+REPOSITORY   TAG       IMAGE ID       CREATED          SIZE
+prj01        latest    2317a9ea6fc7   33 minutes ago   1.82MB
+golang       1.21      3758cb2c0a6b   6 days ago       814MB
+</pre>
+The newly built image "prj01" can be seen from
+<span class="command">docker images</span> now.
+It has a very small size of 1.82MB, which is about 1/1000
+of our VM Appliance.
+</p>
+
+<p>
+The Docker image can be executed in a container by
+the <span class="command">docker run</span> command.
+This is a complicated command that we will take time
+to learn, but for now we simply use
+the <span class="command">--rm</span> option
+so the container will be removed at the end
+without consuming any storage resources.
+<pre class="console">
+ubuntu@ece573:~$ docker run --rm prj01
+Hello world!
+</pre>
+</p>
+
+<hr><a name="report" class="section">
+VII. Project Requirements and Deliverables</a>
+
+<p>
+You will need to complete all the steps above to setup
+the VM instance correctly.
+<span class="emph">
+You should first complete Basic Linux usage: Chapter 1 to 8 from
+<a href="https://ryanstutorials.net/linuxtutorial/">
+Linux Tutorial</a> if you are not familiar with
+basic Linux commands.
+</span>
+All commands use similar structures for inputs and outputs
+so if anything goes wrong, you will need to read the outputs
+carefully to understand what could be the problem -
+usually it's a typo or a missing or extra space
+somewhere in your typing.
+</p>
+
+<p>
+Modify the file <span class="command">hello.go</span>
+to print the date and time now as well as the last four digits
+of your CWID. Build the docker image and execute it again.
+The output should be something like follows:
+<pre class="console">
+ubuntu@ece573:~$ docker build -t prj01 ece573-prj01
+...
+ => => writing image sha256:6192b944ea4a53094535695b9e8903b330a634c174ac25009c5b7442ac4159b0      0.0s
+ => => naming to docker.io/library/prj01                                                          0.0s
+ubuntu@ece573:~$ docker run --rm prj01
+Hello world!
+It's 2023-08-15 21:15:42 now and my CWID ending in 1111.
+</pre>
+</p>
+
+<p>
+Prepare a project report in .doc/.docs or .pdf format
+and submit it to Canvas before the deadline.
+Your project report should include the following:
+<ul>
+<li>
+(5 points)
+The lines you have added to <span class="command">hello.go</span>
+to print the date and time now as well as the last four digits
+of your CWID.
+</li>
+<li>
+(5 points)
+A screenshot showing the execution of the updated "prj01" image.
+</li>
+<li>
+(10 points)
+Provide answers to the following questions. You may need to
+perform additional searches online to find the answers.
+  <ul>
+  <li>What do "pets" and "cattle" refer to?</li>
+  <li>Why do we need to use <span class="command">sudo</span>
+  when executing the script <span class="command">setup_vm.sh</span>?</li>
+  <li>When we pull docker images, where on the Internet
+  do the images come from?</li>
+  <li>What is the difference between a docker image and a container?</li>
+  </ul>
+</li>
+</ul>
+</p>
+
+</body>
+</html>

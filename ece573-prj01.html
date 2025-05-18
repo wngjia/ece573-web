@@ -1,0 +1,430 @@
+<html>
+<head>
+<link rel="stylesheet" type="text/css" href="course.css">
+<title>ECE 473/573 Fall 2026 - Project 1</title>
+</head>
+<body>
+
+<center>
+<p>
+<h1>ECE 473/573 Fall 2026 - Project 1</h1>
+<h1>Containerized Marketplace</h1>
+</p>
+    
+<p><hr>
+<br>Report Due: 09/20 (Sun.), by the end of the day (Chicago time)
+<br>Late submissions will NOT be graded
+</center>
+</p>
+
+<hr><a name="objective" class="section">
+I. Objective</a>
+
+<p>
+In this project, you will learn basic steps to setup environments
+for software development and deployment
+using virtual machines (VM) and containers.
+You will also learn to explore code repository,
+to build and run a web service,
+and to design tests to cover both normal and failure cases.
+</p>
+
+<hr><a name="vm" class="section">
+II. Virtual Machine Setup</a>
+
+<p>
+Since our provisioning scripts use prebuilt binary packages and container images
+that only run on x64 (Intel/AMD) processors,
+we recommend to use a recent Windows computer with at least
+4 CPU cores, 16GB memory, and 512GB SSD.
+<span class="emph">
+If you are using ARM-based computers (Apple MacBooks, Raspberry Pi's, etc.)
+or your computers are more than 5 years old, please consider buying
+a new Windows computer as mentioned earlier.
+</span>
+Alternatively, you may rent a x64 Ubuntu server from cloud providers
+and follow instructions in the next section,
+though we are not responsible for any cost incurred and we cannot
+provide support for any tech issues.
+</p>
+
+<p>
+Install the most recent version of
+<a href="https://www.virtualbox.org/">VirtualBox</a> on your computer.
+You will need to
+<a href="https://www.quora.com/How-do-I-enable-hardware-virtualization-in-Windows-10-and-how-do-I-resolve-the-following-error-message-in-Android-Studio-1-3-1-%E2%80%9CHAX-kernel-module-is-not-installed%E2%80%9D">
+turn on hardware virtualization</a>
+if you haven't done so already.
+</p>
+
+<p>
+Download the VM Appliance
+<a href="https://iit0-my.sharepoint.com/:u:/g/personal/jwang34_illinoistech_edu/IQDIehVk8ZKmR6857M7zNaZQAXQiX33l9ivwJoeBvXe-0eA">
+IIT-ECE573-U24.ova</a>
+and double-click to install/import. Make sure the file is downloaded
+completely with the size of 2,399,097,344 bytes and verify the integrity if possible.
+  <ul>
+  <li>MD5:     10be5d8005a162a277fa4a0f873b3148 </li>
+  <li>SHA-256: 28504891558a2e142927582a5ba16d4669380beea9d387ccb19726b04368f2fd </li>
+  </ul>
+Please keep this .ova file as we will need to use it throughout the semester
+for other projects.
+</p>
+
+<p>
+Choose the installed VM and click 'Settings'.
+Choose 'Network' and click 'Advanced' from 'Adapter 1'.
+Click 'Port Forwarding' to bring up 'Port Forwarding Rules'.
+You should be able to see a mapping from 'Guest Port' 22
+to 'Host Port' 57322. If not, you should setup the rule by yourself.
+</p>
+
+<p>
+Start the VM. After a while, it would display the login screen.
+While you could login here using username 'ubuntu' and password 'iitece',
+it is much more convenient to access the VM using SSH
+as introduced next.
+</p>
+
+<hr><a name="server" class="section">
+III. Ubuntu Server Setup</a>
+
+<p>
+Alternatively, if you are familiar with linux server administration and cloud computing,
+you may use your own Ubuntu server or a Ubuntu server instance rented from a cloud provider.
+Please follow the instructions below but be advised that
+<span class="emph">
+we are not responsible for any cost incurred and we cannot
+provide support for any tech issues.
+</span>
+In addition, you will be required to use the VirtualBox VM above if issues persist.
+<ol>
+  <li>Prepare your server to have at least 4 CPU cores, 16GB memory, and 100GB storage.</li>
+  <li>Install Ubuntu 24.04 LTS x64: for cloud instances, pick exactly this version;
+  otherwise, download and install the Server install image from 
+  <a href="https://releases.ubuntu.com/24.04/">here</a>.</li>
+  <li>It is better to NOT use the root user directly.
+  Create a user with a strong password. You may further
+  disable the password and use SSH key pairs for best security.</li>
+  <li>Figure out the IP address and the port for your Ubuntu server,
+  follow the instructions in the next section to access the instance,
+  then download and exectue our provisioning script.</li>
+  <li>
+  <span class="emph">
+  To save the cost, you may destroy the instance once you are done with the project.
+  Make sure to backup your source code or push it to a remote git repository first.
+  </span>
+  </li>
+</ol>
+</p>
+
+<hr><a name="ssh" class="section">
+IV. Access Remote Instances via SSH</a>
+
+<p>
+Managing computing resources rented from a cloud provider,
+e.g. a virtual private server (VPS), is not very different
+from managing your VM that is currently running on your
+own computer given you are using a proper set of tools.
+In this section, we will introduce you to remote access
+tools that depend on the SSH protocol.
+These tools provide terminal access to instances
+where you can execute shell commands.
+Here are some tutorials that you should go through if you are not familiar
+with Linux systems:
+<ul>
+  <li>
+  Basic Linux usage: Chapter 1 to 8 from
+  <a href="https://ryanstutorials.net/linuxtutorial/">Linux Tutorial</a>.
+  </li>
+  <li>
+  Text editor: vi/Vim (<a href="https://linuxconfig.org/vim-tutorial">Vim Tutorial</a>)
+  are prefered since they are available from most installations.
+  Professionals also use Emacs that need to be installed first
+  (<a href="https://tldp.org/HOWTO/Emacs-Beginner-HOWTO.html">Emacs
+  Beginner's HOWTO</a>).
+  </li>
+</ul>
+</p>
+
+<p>
+Visual Studio Code (VS Code) is a code editor that can be extended
+into a powerful IDE by third-party extensions.
+Download <a href="https://code.visualstudio.com/">VS Code</a> and install as necessary.
+</p>
+
+<p>
+"Remote - SSH" is a widely used VS Code extension that makes it possible
+to perform development tasks on a remote instance using your
+favorite graphical user interface. You can follow
+<a href="https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh">
+this link</a> to install it, or you can start VS Code
+and search for it in the Extensions panel from the left.
+</p>
+
+<p>
+Click the green "&gt;&lt;" button at the lower left corner
+to access remote window options in VS Code. Choose "Connect to Host..."
+and then enter "ubuntu@127.0.0.1:57322". A new VS Code window
+will open and asks you for the password. Once you type the password
+'iitece', you will be connected to the server. You can now
+access files by opening a folder and execute commands
+by opening a terminal. Sometimes you will need to type the password again.
+</p>
+
+<hr><a name="provision" class="section">
+V. Instance Provisioning</a>
+
+<p>
+Our VM, like most of the instances rented from cloud,
+only has a minimal set of software packages installed.
+It is up to you to install and configure packages
+as needed.
+</p>
+
+<p>
+"Pets vs. Cattle" refers to a methodology shift of server
+management for cloud computing from more traditional approaches.
+Traditionally, physical servers are treated as "pets". Each server
+has a particular role and their specific needs are met
+by installing and configuring software packages individually.
+Over the years, many of those packages will be updated
+so it is possible that one may lose track of what packages
+and what versions are actually installed.
+As a consequence, it is critical to ensure the health of
+these servers as it is very difficult to replace any.
+</p>
+
+<p>
+Server management takes the "cattle" approach for cloud
+computing so that a horde of servers can be easily
+managed and replaced. In this approach, we no longer have
+direct access to the physical server.
+Instead, the underlying computing resources are accessed
+via VM instances that can be created and destroyed.
+All provisioning tasks including installing and configuring
+software packages are automated by scripts. These scripts
+are further stored in a version control system like Git so
+that any instance can be reproduced exactly.
+</p>
+
+<p>
+Clone the repository on GitHub that holds scripts and source
+code for Project 1 by <span class="command">
+git clone https://github.com/wngjia/ece573-prj01.git</span>.
+<pre class="console">
+ubuntu@ubuntu24:~$ git clone https://github.com/wngjia/ece573-prj01.git
+Cloning into 'ece573-prj01'...
+...
+</pre>
+</p>
+
+<p>
+Provision the instance with the script <span class="command">
+setup_vm.sh</span>.
+<pre class="console">
+ubuntu@ubuntu24:~$ sudo ece573-prj01/setup_vm.sh
+...
+</pre>
+It will take a while to complete and you may need to type
+the password again.
+</p>
+
+<p>
+Now two software packages, Docker and Go, should be properly
+installed and configured, which can be verified by inspecting
+their versions after running <span class="command">newgrp docker</span>.
+<pre class="console">
+ubuntu@ubuntu24:~$ newgrp docker
+ubuntu@ubuntu24:~$ go version
+go version go1.26.6 linux/amd64
+ubuntu@ubuntu24:~$ docker --version
+Docker version 29.7.2, build a7dcaa6
+ubuntu@ubuntu24:~$ docker buildx version
+github.com/docker/buildx v0.36.1 1d8dde89b8aba914e05e45366770736fea1fd690
+ubuntu@ubuntu24:~$ docker compose version
+Docker Compose version v5.5.0
+</pre>
+</p>
+
+<hr><a name="docker" class="section">
+VI. Containerized Marketplace</a>
+
+<p>
+Using scripts to automatically setup VM instances
+makes it possible to manage many instances efficiently.
+However, VMs are considered "heavy" as they would need
+to consume resources and take time to create and destroy.
+Docker provides access to containers, which can be
+treated as "lightweight virtual machines", that makes
+the use of resources more effective.
+</p>
+
+<p>
+Very similar to how we setup our VM instance, to use
+Docker you will need to start with some "docker images"
+that contain initial container setups. Then, you can
+create your own images by modifying existing ones,
+e.g. adding your own software.
+What is the point of all these complexities instead
+of just deploying your own software binary?
+The point is that all these images can be easily
+distributed to any instances supporting Docker
+and be executed in containers there reproducing
+the same behavior without the need to install
+any other packages your software may be depending on.
+In addition, once software packages are all deployed
+using Docker, it is possible to reproduce production
+environments in development settings, a very preferable
+approach for software developement and testing.
+</p>
+
+<p>
+While the above steps could be quite complicated,
+code repositories may provide scripts,
+just like our <span class="command">setup_vm.sh</span>,
+to simplify the process.
+There is usually a file named
+<span class="command">README.md</span>
+to introduce the project and to explain how to use it.
+Please review our <span class="command">README.md</span>,
+either in its textual form, or directly on
+<a href="https://github.com/wngjia/ece573-prj01">
+GitHub</a> as a web page.
+</p>
+
+<p>
+Our <span class="command">README.md</span>
+suggests to execute the script
+<span class="command">run_baseline.sh</span>
+from the project directory to quickly
+build the Docker image,
+start the marketplace service,
+and run a baseline test flow.
+<pre class="console">
+ubuntu@ubuntu24:~$ cd ece573-prj01/
+ubuntu@ubuntu24:~/ece573-prj01$ ./run_baseline.sh
+...
+Image built. Run ./scripts/start.sh to use the new image.
+Marketplace service is ready at http://127.0.0.1:8080.
+ece573-prj01
+Baseline flow completed.
+Responses are saved in out.
+</pre>
+</p>
+
+<p>
+Please use VS Code to locate
+<span class="command">run_baseline.sh</span>
+and review its content.
+It shows how to start the service
+by <span class="command">start.sh</span>,
+run a sequence of operations
+consisting of <span class="command">list.sh</span>,
+<span class="command">browse.sh</span>,
+and <span class="command">order.sh</span>,
+and finally stop the service by
+<span class="command">stop.sh</span>.
+More details of these five individual operations
+can be found in <span class="command">README.md</span> .
+In addition, <span class="command">run_baseline.sh</span>
+stores the responses from the service
+into three JSON files in
+the <span class="command">out</span> directory.
+Locate them in VS Code and review their contents
+to understand how the sequence of operations
+tests the service by listing a used book and ordering it.
+</p>
+
+<p>
+Indeed, <span class="command">run_baseline.sh</span>
+demonstrates a common pattern to test a service:
+first start it from a known state, usually an empty one without any data,
+then apply operations and observe how the service reacts,
+and finally stop it to release all the resources.
+Your task is to apply this pattern to design two additional tests
+for the following cases with invalid order requests:
+<ol>
+<li>
+Order from a listing that does not exist at all.
+</li>
+<li>
+Order from a listing that was sold already.
+</li>
+</ol>
+Each test should consist of a sequence of operations,
+starting with <span class="command">start.sh</span>
+and ending at <span class="command">stop.sh</span>.
+Run the tests and observe whether the service reacts properly.
+</p>
+
+<hr><a name="report" class="section">
+VII. Project Requirements and Deliverables</a>
+
+<p>
+You will need to complete all the steps above to setup
+the VM instance correctly and to test the containerized
+marketplace service.
+<span class="emph">
+You should first complete Basic Linux usage: Chapter 1 to 8 from
+<a href="https://ryanstutorials.net/linuxtutorial/">
+Linux Tutorial</a> if you are not familiar with
+basic Linux commands.
+</span>
+All commands use similar structures for inputs and outputs.
+If anything goes wrong, you will need to read the outputs
+carefully to understand what could be the problem -
+usually it's a typo or a missing or extra space
+somewhere in your typing.
+</p>
+
+<p>
+Prepare a project report in .doc/.docs or .pdf format
+and submit it to Canvas before the deadline.
+Your project report should include the following
+for a total of 10 points:
+<ul>
+<li>
+Section V
+  <ul>
+  <li>(1 point)
+  What do "pets" and "cattle" refer to?</li>
+  <li>(1 point)
+  Why do we need to use <span class="command">sudo</span>
+  when executing the script <span class="command">setup_vm.sh</span>?</li>
+  <li>(1 point)
+  How do you know the Docker and Go packages are successfully installed?
+  Include screenshots as your evidence.</li>
+  </ul>
+</li>
+<li>
+Section VI
+  <ul>
+  <li>(1 point)
+  Please locate and inspect <span class="command">marketplace-service/Dockerfile</span>.
+  What is the purpose of the base images
+  'golang:1.26-alpine' and 'alpine:3.21'?
+  Where on the Internet are they obtained from?</li>
+  <li>(1 point)
+  What is the purpose of running <span class="command">run_baseline.sh</span>
+  before designing and conducting our own tests?
+  How do you know it has completed properly?
+  Include screenshots as your evidence.</li>
+  <li>(1 point)
+  To test a service, why do we usually start with an empty state without any data?
+  Describe a situation where leftover data could make a test result unreliable.
+  </li>
+  <li>(4 points)
+  Provide the sequence of operations for the two
+  tests you have designed.
+  Explain what are expected and what the actual
+  JSON responses are.
+  Does the service react properly?
+  Include screenshots as your evidence.
+  </li>
+  </ul>
+</ul>
+</p>
+
+</body>
+</html>

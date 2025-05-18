@@ -1,0 +1,273 @@
+<html>
+<head>
+<link rel="stylesheet" type="text/css" href="course.css">
+<title>ECE 473/573 Fall 2026 - Project 3</title>
+</head>
+<body>
+
+<center>
+<p>
+<h1>ECE 473/573 Fall 2026 - Project 3</h1>
+<h1>Marketplace Authentication and Authorization</h1>
+</p>
+
+<p><hr>
+<br>Report Due: 10/25 (Sun.), by the end of the day (Chicago time)
+<br>Late submissions will NOT be graded
+<br>(This project is optional for ECE 473 students.)
+</p>
+</center>
+
+<hr><a name="objective" class="section">
+I. Objective</a>
+
+<p>
+In this project, you will add authentication and authorization to the
+persistent marketplace. You will explore how a separate
+login service issues JSON Web Tokens (JWTs), how the marketplace verifies
+them, and how one shared wrapper can protect several REST routes.
+</p>
+
+<hr><a name="system" class="section">
+II. Marketplace Login and Authentication</a>
+
+<p>
+Clone the repository <a href="https://github.com/wngjia/ece573-prj03.git">
+https://github.com/wngjia/ece573-prj03.git</a>
+that holds scripts and source code for Project 3.
+Similar to Project 1 and 2, please create a new VM by importing
+our VM Appliance, make a clone of the repository (or fork it first),
+and provision the instance with the script <span class="command">setup_vm.sh</span>.
+</p>
+
+<p>
+It is optional to incorporate your completed Project 2 into Project 3
+in order to support all functionalities.
+If you have completed Project 2,
+you may copy your completed versions into Project 3,
+assuming you have cloned your Project 2 into your home directory like the Project 3:
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj03$ cp ../ece573-prj02/marketplace-service/marketplace/accounts.go marketplace-service/marketplace/accounts.go
+ubuntu@ubuntu24:~/ece573-prj03$ cp ../ece573-prj02/marketplace-service/marketplace/orders.go marketplace-service/marketplace/orders.go
+</pre>
+According to the architecture of our services, these two files should not be modified in Project 3 otherwise.
+</p>
+
+<p>
+Briefly review our <span class="command">README.md</span>,
+either in its textual form, or directly on
+<a href="https://github.com/wngjia/ece573-prj03">
+GitHub</a> as a web page.
+Execute the script <span class="command">run_baseline.sh</span>
+from the project directory to run the starter baseline:
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj03$ ./run_baseline.sh
+...
+Starter baseline completed.
+Responses are saved in out/.
+The Project 2 account assembly and credit check remain TODOs.
+The services are stopped; the Postgres volume and signing keys are preserved.
+</pre>
+We organize the scripts in Project 3 in a similar way as Project 2.
+The baseline uses these scripts to reset the database and signing key,
+start Postgres and two Go services, register two accounts,
+grants credit, list and order an item, and finally restart
+the marketplace service to make sure the order succeeds.
+</p>
+
+<p>
+Open 'docker-compose.yml' to understand the architecture
+of our marketplace with added support of authentication and authorization.
+It defines three services: postgres and marketplace-service similar
+to that of Project 2, and a login service to authenticate users.
+The two Go services are built from separate targets
+in the root Dockerfile so that both can use the shared 'auth' package,
+which takes care of handling JWTs.
+</p>
+
+<p>
+Read the source files for the login service.
+The login service owns registration, password verification, and JWT issuance.
+Registration creates an account with zero credits and a regular-user role.
+The supplied helpers hash passwords with Argon2id and sign JWTs using
+an Ed25519 private key.
+It creates 'course-admin' on startup if the account doesn't exist
+and updates the password based on 'secrets/admin-password',
+which may be regenerated randomly by the reset script.
+Then, the login service will serve two RESTful endpoints,
+<span class="command">POST /accounts</span> for registration and
+<span class="command">POST /login</span> that issues a JWT Bearer token
+upon successful login.
+Follow-up RESTful requests should include the JWT to identify the user.
+</p>
+
+<p>
+Since we haven't implemented authorizations in the marketplace service yet,
+<span class="command">run_baseline.sh</span> sets the environment variable
+<span class="command">AUTH_ENABLED=false</span> so that the first run
+could proceed without triggering the unfinished authorizations.
+Later on, to experiment with authorizations,
+set <span class="command">AUTH_ENABLED=true</span>
+when starting the services:
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj03$ ./scripts/reset.sh
+...
+Signing keys and admin password rotated.
+Services are stopped. Run ./scripts/start.sh to use the new secrets.
+Database reset. Admin password is in secrets/admin-password.
+ubuntu@ubuntu24:~/ece573-prj03$ AUTH_ENABLED=true ./scripts/start.sh
+...
+Marketplace service is ready at http://127.0.0.1:8080.
+Login service is ready at http://127.0.0.1:8081.
+ubuntu@ubuntu24:~/ece573-prj03$ ./scripts/create-account.sh Alice
+Password: 
+{"account_id":"Alice","balance":0,"role":"user"}
+ubuntu@ubuntu24:~/ece573-prj03$ ./scripts/login.sh Alice
+Password: 
+{"access_token":"*hidden*","expires_in":1800,"token_type":"Bearer"}
+</pre>
+Registration and login scripts prompt for a password.
+The login script prints the issued JWT token to stdout.
+Make sure that passwords, JWTs, and private keys
+should not appear in your report screenshots or ordinary service logs.
+Read <span class="command">README.md</span>
+for examples using the Marketplace scripts with the JWT token.
+</p>
+
+<hr><a name="implement" class="section">
+III. Authorization Implementations</a>
+
+<p>
+The marketplace service retains four RESTful endpoints from Project 2,
+including <span class="command">GET /listings</span>,
+<span class="command">POST /listings</span>,
+<span class="command">POST /orders</span>, and
+<span class="command">GET /accounts/{account_id}</span>,
+and also adds <span class="command">POST /accounts/{account_id}/credits</span>.
+While anyone can use <span class="command">GET /listings</span>,
+only specific users can access the other four when <span class="command">AUTH_ENABLED=true</span>.
+In short, only regular users may list or buy,
+users may only view their own accounts,
+and only the admin may grant positive credits to regular users.
+</p>
+
+<p>
+Read 'marketplace-service/main.go' first to see the route table.
+It includes all routes when <span class="command">AUTH_ENABLED=false</span>,
+and one route for <span class="command">AUTH_ENABLED=true</span>
+as the example.
+A 'TODO Project 3' comment indicates that you will need to
+complete the other three routes requiring authorizations based on the example.
+Without knowing the detail of the authorization wrapper 'requireAuthorization',
+please make reasonable guess on its parameters and then complete this TODO item.
+</p>
+
+<p>
+Now we are ready to review 'marketplace-service/authorization.go'
+to understand and implement the authorization wrapper 'requireAuthorization'.
+This function uses the decorator pattern as we have introduced in the lectures
+to add authorization to any RESTful handler function ('http.HandlerFunc').
+The supplied code extracts the JWT token from request header and verifies it.
+The 'TODO Project 3' requires you to write a few lines of code
+to check whether the token's subject and role are permitted
+using the filters 'matchesID' and 'allowsRole',
+before proceeding to the requested marketplace operation 'next'.
+Make sure to generate specific error response for failures:
+return HTTP 400 ('http.StatusBadRequest') if the filter reports an invalid identity field,
+and return HTTP 403 ('http.StatusForbidden') if the operation is not permitted.
+</p>
+
+<p>
+After you have completed both Project 3 TODOs,
+run <span class="command">acceptance.sh</span>
+and <span class="command">attack.sh</span>
+to verify the correctness.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj03$ ./acceptance.sh
+Project 3 acceptance test passed.
+Responses are saved in out/.
+Services are stopped; the Postgres volume and signing keys are preserved.
+ubuntu@ubuntu24:~/ece573-prj03$ ./attack.sh
+Project 3 attack test passed.
+Responses are saved in out/attack/.
+Services are stopped; the Postgres volume and signing keys are preserved.
+</pre>
+The acceptance script checks successful registration, an admin credit grant,
+listing, public browse, and checkout.
+The attack script numbers its ten rejection tests:
+<ol>
+<li>Wrong-password login (401).</li>
+<li>A regular user cannot grant credits (403).</li>
+<li>Admin cannot grant credits to an admin account (400).</li>
+<li>A missing token cannot create a listing (401).</li>
+<li>An invalid token cannot create a listing (401).</li>
+<li>Bob cannot create a listing for Alice (403).</li>
+<li>Admin cannot create a listing (403).</li>
+<li>Alice cannot place an order for Bob (403).</li>
+<li>Admin cannot place an order (403).</li>
+<li>Alice cannot read Bob's account (403).</li>
+</ol>
+</p>
+
+<hr><a name="report" class="section">
+IV. Project Deliverables</a>
+
+<p>
+Prepare a project report in .doc/.docx or .pdf format
+and submit it to Canvas before the deadline.
+Your project report should include the following
+for a total of 15 points:
+<ul>
+<li>
+Section II
+  <ul>
+  <li>(1 point)
+  Explain the purpose of the package argon2 used in the login service.
+  Why don't the login service store the password directly into the database?</li>
+  <li>(1 point)
+  Explain why login holds the private signing key
+  while marketplace has only the public verification key.</li>
+  <li>(1 point)
+  Among stopping and restarting services,
+  rotating secrets while retaining the database,
+  and resetting everything, which operations
+  invalidate existing JWTs? Which delete account data?</li>
+  <li>(1 point)
+  How to update password for course-admin?
+  How to update password for other users?</li>
+  </ul>
+</li>
+<li>
+Section III
+  <ul>
+  <li>(1 point)
+  Explain why we use the authorization wrapper instead of modify
+  each RESTful handler.</li>
+  <li>(1 point)
+  Referring to 'marketplace-service/main.go'
+  and 'marketplace-service/authorization.go',
+  explain how 'allowRole', 'allowAny', 'matchBody',
+  'matchPath', 'matchAny' work.
+  In particular,
+  why 'POST /orders' should use 'matchBody'
+  and 'GET /accounts/{account_id}' should use 'matchPath'?
+  </li>  
+  <li>(2 point)
+  Show the lines of code you have added for the authorization wrapper
+  and the three protected routes.
+  Explain each route's identity and role rules and how it is checked in the wrapper.</li>
+  <li>(2 points)
+  Provide evidences of successful <span class="command">acceptance.sh</span>
+  and <span class="command">attack.sh</span> runs.
+  Show representative responses while redact passwords and JWTs from screenshots.</li>
+  <li>(5 points total; 0.5 point per test) For each of attack tests 1 to 10,
+  identify the file and line(s) containing the decision that rejects the
+  request. Explain the condition, the resulting HTTP status, and whether
+  the marketplace business handler runs, when applicable.</li>
+  </ul>
+</li>
+</ul>
+</p>
+
+</body>
+</html>

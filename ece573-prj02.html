@@ -1,0 +1,285 @@
+<html>
+<head>
+<link rel="stylesheet" type="text/css" href="course.css">
+<title>ECE 473/573 Fall 2026 - Project 2</title>
+</head>
+<body>
+
+<center>
+<p>
+<h1>ECE 473/573 Fall 2026 - Project 2</h1>
+<h1>Persistent Marketplace</h1>
+</p>
+    
+<p><hr>
+<br>Report Due: 10/04 (Sun.), by the end of the day (Chicago time)
+<br>Late submissions will NOT be graded
+</center>
+</p>
+
+<hr><a name="objective" class="section">
+I. Objective</a>
+
+<p>
+In this project, you will learn how to containerize
+multiple services using Docker Compose via container orchestration.
+You will also learn to explore a more complicated code repository
+involving business logic and database operations,
+and to make updates to meet the requirements.
+</p>
+
+<hr><a name="compose" class="section">
+II. Persistent Marketplace</a>
+
+<p>
+We continue our exploration of the marketplace service
+and focus on persistence backed by a Postgres database in this project.
+Clone the repository <a href="https://github.com/wngjia/ece573-prj02.git">
+https://github.com/wngjia/ece573-prj02.git</a>
+that holds scripts and source code for Project 2.
+Similar to Project 1, please create a new VM by importing
+our VM Appliance, make a clone of the repository (or fork it first),
+and provision the instance with the script <span class="command">setup_vm.sh</span>.
+</p>
+
+<p>
+Briefly review our <span class="command">README.md</span>,
+either in its textual form, or directly on
+<a href="https://github.com/wngjia/ece573-prj02">
+GitHub</a> as a web page.
+Execute the script <span class="command">run_baseline.sh</span>
+from the project directory to quickly build the Docker image,
+start the services, and run a baseline test flow.
+<pre class="console">
+ubuntu@ubuntu24:~$ cd ece573-prj02/
+ubuntu@ubuntu24:~/ece573-prj02$ ./run_baseline.sh
+...
+[+] up 5/5
+ ✔ Image ece573-prj02-marketplace-service       Built   13.8s
+ ✔ Network ece573-prj02_default                 Created 1.5s
+ ✔ Volume ece573-prj02_marketplace-data         Created 0.6s
+ ✔ Container ece573-prj02-postgres-1            Healthy 17.8s
+ ✔ Container ece573-prj02-marketplace-service-1 Created 3.5s
+curl: (56) Recv failure: Connection reset by peer
+curl: (56) Recv failure: Connection reset by peer
+curl: (56) Recv failure: Connection reset by peer
+curl: (56) Recv failure: Connection reset by peer
+curl: (56) Recv failure: Connection reset by peer
+Marketplace service is ready at http://127.0.0.1:8080.
+ Container ece573-prj02-marketplace-service-1 Restarting 
+ Container ece573-prj02-marketplace-service-1 Started 
+[+] down 3/3
+ ✔ Container ece573-prj02-marketplace-service-1 Removed 4.7s
+ ✔ Container ece573-prj02-postgres-1            Removed 4.9s
+ ✔ Network ece573-prj02_default                 Removed 1.4s
+Services stopped. The Postgres volume was retained.
+Starter baseline completed.
+Responses are saved in out/.
+The insufficient-credit check and account response remain Project 2 TODOs.
+The services are stopped and the Postgres volume is preserved.
+</pre>
+</p>
+
+<p>
+The above output from <span class="command">run_baseline.sh</span>
+shows a lot of details on our persistent marketplace.
+It consists of two services marketplace-service and postgres,
+each running in its own container.
+The marketplace-service service uses the source code in the 'marketplace-service' directory.
+On the other hand, the postgres service uses a pre-built Postgres image,
+which saves us a lot of effort.
+Instead of managing these two containers individually, we utilize
+Docker Compose to orchestrate the two so that they can be easily
+built, started, and stopped as a whole.
+</p>
+
+<p>
+Docker Compose uses the 'docker-compose.yml' file to define
+the services as containers and how they should be orchestrated.
+Open 'docker-compose.yml' and you should be able to tell it defines two services.
+The first service is postgres that uses the pre-built image 'postgres:16-alpine'.
+More details of this image can be found on
+<a href="https://hub.docker.com/_/postgres/">Docker Hub</a>,
+including the descriptions for the environment variables defined
+in the postgres service.
+The second service marketplace-service should be built from the directory 'marketplace-service'.
+The port '8080' is published as '8080' so that we can access
+the service inside the container from the VM.
+</p>
+
+<p>
+What is not shown in the docker-compose.yml script is that
+by default Docker Compose will create a private network to
+interconnect the containers. Each container gets its own
+IP address and will need to know the addresses of others
+before they can communicate.
+For example, how could the marketplace-service service know the address of
+the postgres service? It is definitely not a good idea to hard
+code the addresses in the script and in the source code.
+Instead, we utilize the DNS service provided by Docker Compose
+where each service container has a domain name matching
+the name of the service.
+We pass 'postgres' via environment variable to the marketplace-service
+so marketplace-service can use it to connect to the database.
+</p>
+
+<p>
+Our script <span class="command">start.sh</span>
+(called by <span class="command">run_baseline.sh</span>)
+uses <span class="command">docker compose up -d --build</span>
+to build the container image for marketplace-service
+and then start both services.
+This helps to avoid the common error where the code for marketplace-service is updated
+but the service runs an older version of the container image.
+As shown by the output of <span class="command">run_baseline.sh</span>,
+it may take a few minutes to complete for the first time as it needs to pull images from Docker Hub.
+Later on, it will take less time to start.
+<pre class="console">
+ubuntu@ubuntu24:~$ cd ece573-prj02/
+ubuntu@ubuntu24:~/ece573-prj02$ scripts/start.sh
+...
+[+] up 4/4
+ ✔ Image ece573-prj02-marketplace-service       Built     13.2s
+ ✔ Network ece573-prj02_default                 Created   1.0s
+ ✔ Container ece573-prj02-postgres-1            Healthy   13.6s
+ ✔ Container ece573-prj02-marketplace-service-1 Created   3.5s
+Marketplace service is ready at http://127.0.0.1:8080.
+</pre>
+Note that <span class="command">start.sh</span>
+uses 'curl' to poll the marketplace endpoint while the service starts.
+A varying number of transient curl failures may appear before the service becomes ready.
+</p>
+
+<p>
+Are the containers actually running? Use <span class="command">docker compose ps</span>
+to show all running containers.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj02$ docker compose ps
+NAME                                 ...
+ece573-prj02-marketplace-service-1   ...
+ece573-prj02-postgres-1              ...
+</pre>
+Pay attention to NAME, IMAGE, SERVICE, STATUS, and PORTS columns as they indicate
+if the containers match your expectations.
+</p>
+
+<p>
+What if something went wrong and you will need to troubleshoot issues?
+Usually a service will generate a lot of log messages on the screen.
+However, since we run our containers in the background you won't be able to see
+those messages directly. To access them, you may use the command
+<span class="command">docker compose logs</span>,
+optionally with Compose service name.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj02$ docker compose logs postgres
+...
+postgres-1  | 2026-09-06 22:06:30.988 UTC [29] LOG:  database system was shut down at 2026-09-06 21:38:31 UTC
+postgres-1  | 2026-09-06 22:06:31.191 UTC [1] LOG:  database system is ready to accept connections
+postgres-1  | 2026-09-06 22:11:31.012 UTC [27] LOG:  checkpoint starting: time
+postgres-1  | 2026-09-06 22:11:36.153 UTC [27] LOG:  checkpoint complete: wrote 44 buffers (0.3%); ...
+</pre>
+</p>
+
+<p>
+Our persistent marketplace is running and similar to Project 1,
+you can use the scripts provided in 'scripts' to test it from the VM.
+Read <span class="command">README.md</span> carefully for more details.
+</p>
+
+<hr><a name="implement" class="section">
+III. REST API Implementations</a>
+
+<p>
+Now you should spend some time reading the Go source code in the 'marketplace-service' directory
+to understand how the RESTful service is implemented.
+We have discussed them in the lectures and the <span class="command">README.md</span> provides
+a quick summary as well.
+You will need to complete two intentionally incomplete functions for this section:
+Balance Transaction and Account Assembly.
+</p>
+
+<p>
+For Balance Transaction, locate the function 'CreateOrder'
+from the file 'marketplace-service/marketplace/orders.go'.
+This function is complicated as it needs to handle rows from multiple tables for a transaction,
+and you should focus on the part starting with 'TODO Project 2' to make the modifications.
+It should take fewer than 10 lines of code to complete the balance check
+and to return the required error.
+</p>
+
+<p>
+For Account Assembly, locate another 'TODO Project 2' in the function 'GetAccount'
+from the file 'marketplace-service/marketplace/accounts.go'.
+You will need to follow the existing code as an example
+to call each of the three helpers
+('getListingsBySeller', 'getOrdersByBuyer', and 'getSalesBySeller'),
+return immediately on an error, and assign the resulting activity fields.
+It should take fewer than 50 lines of code.
+</p>
+
+<p>
+Once you have implemented both functions, follow <span class="command">README.md</span>
+to verify the correctness by running <span class="command">acceptance.sh</span>.
+</p>
+
+<hr><a name="report" class="section">
+IV. Project Deliverables</a>
+
+<p>
+Prepare a project report in .doc/.docx or .pdf format
+and submit it to Canvas before the deadline.
+Your project report should include the following
+for a total of 20 points:
+<ul>
+<li>
+Section II
+  <ul>
+  <li>(1 point)
+  What is the license of our code? (Hint: read the 'LICENSE' file)</li>
+  <li>(1 point)
+  Open source software may use other licenses like GNU General Public License (GNU GPL)
+  and GNU Affero General Public License (GNU AGPL). What are the differences
+  between GNU GPL and GNU AGPL for cloud services?</li>
+  <li>(1 point)
+  The marketplace-service depends on the postgres service as it needs to load/persist state
+  through the database. How is this dependency defined and resolved in docker-compose.yml?</li>
+  <li>(1 point)
+  Review the two environment sections in docker-compose.yml. What configurations are repeated
+  across the services? Explain what may happen if someone modifies one copy but forgets
+  to change the other.</li>
+  </ul>
+</li>
+<li>
+Section III
+  <ul>
+  <li>(4 points)
+  Show the lines of code you have added for Balance Transaction and explain your approach.</li>
+  <li>(4 points)
+  Show the lines of code you have added for Account Assembly and explain your approach.</li>
+  <li>(4 points)
+  Read <span class="command">acceptance.sh</span> and explain expected outputs
+  for correct implementations. Are the implementations correct?
+  Include screenshots as your evidence.</li>
+  <li>(1 point)
+  In the function 'CreateOrder', what happens to the transaction if an error is returned?
+  (Hint: locate the line with 'defer')</li>
+  <li>(1 point)
+  In the function 'GetAccount', is it possible for 'getListingsBySeller' to report a listing
+  as 'available', while 'getSalesBySeller' includes a completed sale
+  for the same listing? Explain how this could happen.
+  </li>
+  <li>(1 point)
+  To query data from the database, sometimes we use the function 'Query' and sometimes
+  we use the function 'QueryRow'. What are the differences of these two functions,
+  and why 'Query' should be followed by 'defer rows.Close()' while 'QueryRow'
+  does not require it?</li>
+  <li>(1 point)
+  What is the purpose of the script 'scripts/reset.sh'?
+  </li>
+  </ul>
+</li>
+</ul>
+</p>
+
+</body>
+</html>

@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" type="text/css" href="course.css">
+<title>ECE 473/573 Fall 2026 - Project 4</title>
+</head>
+<body>
+
+<center>
+<p>
+<h1>ECE 473/573 Fall 2026 - Project 4</h1>
+<h1>Distributed Database Systems</h1>
+</p>
+
+<p><hr>
+<br>Report Due: 11/1 (Sun.), by the end of the day (Chicago time)
+<br>Late submissions will NOT be graded
+</p>
+</center>
+
+<hr><a name="objective" class="section">
+I. Objective</a>
+
+<p>
+In this project, you will learn the basics of Apache Cassandra,
+a popular open-source distributed NoSQL database.
+A three-node Cassandra cluster is integrated into our shopping marketplace
+to serve listing views and completed-order history,
+while Postgres still owns account credentials and balances,
+as well as listing and order states.
+</p>
+
+<p>
+While production Cassandra deployment will use multiple
+physical servers, we use Docker Compose to create a Cassandra cluster via container orchestration for development and testing.
+</p>
+
+<hr><a name="cassandra" class="section">
+II. Cassandra Cluster Management</a>
+
+<p>
+Clone the repository <a href="https://github.com/wngjia/ece573-prj04.git">
+https://github.com/wngjia/ece573-prj04.git</a>
+that holds scripts and source code for Project 4.
+Similar to previous projects, please create a new VM by importing
+our VM Appliance, make a clone of the repository (or fork it first),
+and provision the instance with the script <span class="command">setup_vm.sh</span>.
+</p>
+
+<p>
+This project no longer depends on your completed Project 2.
+Optionally, you may incorporate your updates from Project 3
+by editing the Project 3 TODO sections in
+'marketplace-service/main.go' and
+'marketplace-service/authorization.go'.
+The provided workflows use <span class="command">AUTH_ENABLED=false</span>
+that permits access to account and history without authorization.
+</p>
+
+<p>
+Briefly review our <span class="command">README.md</span>,
+either in its textual form, or directly on
+<a href="https://github.com/wngjia/ece573-prj04">
+GitHub</a> as a web page.
+Execute the script <span class="command">run_baseline.sh</span>
+from the project directory to run the starter baseline:
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj04$ ./run_baseline.sh
+...
+Starter baseline completed.
+Responses are saved in out/.
+Cassandra account and listing views were checked after marketplace restart.
+The services are stopped; the Postgres volume and signing keys are preserved.
+</pre>
+We organize the scripts in a similar way as previous projects.
+The baseline uses these scripts to reset the Postgres and
+the Cassandra databases, start the services,
+register accounts and grant credit,
+list and order an item, and finally restart
+the marketplace service to make further checks.
+</p>
+
+<p>
+Open 'docker-compose.yml' to understand how the Cassandra cluster
+is integrated into our shopping marketplace.
+The cluster includes three nodes
+<span class="command">cassandra-1</span>,
+<span class="command">cassandra-2</span>, and
+<span class="command">cassandra-3</span>.
+Environment variables
+<span class="command">CASSANDRA_CLUSTER_NAME</span>
+and <span class="command">CASSANDRA_SEEDS</span>
+define the cluster and help nodes discover each other.
+While the node settings are shared via 'extends',
+a separate data volume is used for each node.
+</p>
+
+<p>
+Manually restart the services by executing 'scripts/reset.sh'
+and 'scripts/start.sh' so we can explore the Cassandra cluster further.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj04$ scripts/reset.sh
+...
+Signing keys and admin password rotated.
+Services are stopped. Run ./scripts/start.sh to use the new secrets.
+Postgres and Cassandra state reset. Admin password is in secrets/admin-password.
+ubuntu@ubuntu24:~/ece573-prj04$ scripts/start.sh 
+Starting Postgres, the application services, and 3 Cassandra nodes. This may take a few minutes.
+...
+Waiting for the marketplace and login services to become ready...
+Marketplace service is ready at http://127.0.0.1:8080.
+Login service is ready at http://127.0.0.1:8081.
+</pre>
+</p>
+
+<p>
+Instead of use <span class="command">docker ps</span>
+to verify that all containers are running,
+we can use <span class="command">docker compose ps</span>
+to check the status of the containers for this cluster.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj04$ docker compose ps
+NAME                                 IMAGE                              ... SERVICE               ... STATUS                 ... 
+ece573-prj04-cassandra-1-1           cassandra:4.1.7                    ... cassandra-1           ... Up 3 minutes           ... 
+ece573-prj04-cassandra-2-1           cassandra:4.1.7                    ... cassandra-2           ... Up 3 minutes           ... 
+ece573-prj04-cassandra-3-1           cassandra:4.1.7                    ... cassandra-3           ... Up 3 minutes           ... 
+...
+</pre>
+Pay attention to NAME, IMAGE, SERVICE, and STATUS columns for this project.
+If anything went wrong, use <span class="command">docker compose logs</span>
+with SERVICE to troubleshoot the issue.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj04$ docker compose logs cassandra-1
+...
+cassandra-1-1  | INFO  [NonPeriodicTasks:1] ... All sessions completed
+</pre>
+If the output shows a lot of error messages talking about Java,
+don't panic as the Cassandra cluster takes time to initialize
+and you will need to wait a few minutes to run the command again,
+until the summary of the cluster appears.
+</p>
+
+<p>
+As a distributed database system, one Cassandra program is running
+on each physical server (container for our cluster) to manage
+the resources locally, and they communicate with each other via networking.
+To manage the database system consisting of these programs,
+Cassandra provides two tools, <span class="command">nodetool</span>
+to access the statistics of the Cassandra programs, and
+<span class="command">cqlsh</span> to manage the databases
+and the data via the Cassandra Query Language (CQL),
+which is very similar to SQL.
+For simplicity, we don't install these two tools in our VM
+but use them directly from the Cassandra containers.
+Use <span class="command">docker compose exec</span> to execute
+a program in a container. For example,
+<span class="command">docker compose exec cassandra-1 nodetool status</span>
+executes <span class="command">nodetool status</span> that shows
+a summary of the cluster in the container of cassandra-1.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj04$ docker compose exec cassandra-1 nodetool status
+Datacenter: datacenter1
+=======================
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load        Tokens  Owns (effective)  Host ID                               Rack 
+UN  172.21.0.4  174.11 KiB  16      100.0%            5327fb23-95ba-4f6d-a130-1b5e26b7b3be  rack1
+UN  172.21.0.2  156.62 KiB  16      100.0%            d65cbc10-9f7a-4fb2-bf61-eedf88cbd5e3  rack1
+UN  172.21.0.3  168.84 KiB  16      100.0%            4d1d3b07-3c8e-4825-8079-91d95b150b72  rack1
+</pre>
+</p>
+
+<p>
+Start <span class="command">cqlsh</span> in a similar way.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj04$ docker compose exec cassandra-1 cqlsh
+Connected to ece573-shopping-prj04 at 127.0.0.1:9042
+[cqlsh 6.1.0 | Cassandra 4.1.7 | CQL spec 3.4.6 | Native protocol v5]
+Use HELP for help.
+cqlsh> exit
+</pre>
+The output shows that our Cassandra cluster is indeed
+running because it mentions the cluster name ece573-shopping-prj04
+that we have set up in 'docker-compose.yml'.
+Type exit to exit it.
+You will need to learn CQL first to make full use it.
+Feel free to explore further by reading
+CQL tutorials and documentations online.
+</p>
+
+<hr><a name="model" class="section">
+III. Marketplace Integration</a>
+
+<p>
+Cassandra supports a lot of programming languages, including Go,
+via CQL and a set of APIs.
+For Project 4, we provide the history package in marketplace-service
+to demonstrate how to create keyspaces and tables,
+and how to write data to and read data from a Cassandra cluster in Go.
+</p>
+
+<p>
+Take a look at 'marketplace-service/history/history.go'.
+This file includes functions to connect to the Cassandra cluster
+with the given consistency and seed,
+and to create the keyspace <span class="command">marketplace_history</span>
+requiring 3 replicas in 'datacenter1'
+as well as four tables.
+Among the four tables, both <span class="command">purchases_by_buyer</span>
+and <span class="command">sales_by_seller</span> contain
+exactly the same information for a completed order but with
+different keys to facilitate different queries:
+<span class="command">purchases_by_buyer</span> is partitioned
+by buyer ID so queries by buyer as purchases can be
+queried within one partition,
+and <span class="command">sales_by_seller</span> is partitioned
+by seller ID so queries by seller as sales can also be
+queried within one partition.
+Both tables use 'order_day', 'ordered_at', and 'order_id'
+as the clustering key that further support date/time ranged queries.
+The other two tables <span class="command">listings_by_seller</span>
+and <span class="command">available_listings</span> tables
+support different ways to access the listings, either by seller ID
+or as a whole for unsold items.
+</p>
+
+<p>
+The functions provided by the other two files in 'marketplace-service/history'
+are used by the RESTful handlers in 'marketplace-service/handlers.go'.
+Both the Postgres tables and the Cassandra tables are updated
+when listings are created and ordered via 'POST /listings' and 'POST /orders'.
+After Postgres commits a listing or order,
+the handler writes the updates to Cassandra.
+Note that if the Cassandra updates fail,
+the handler will log the failure but still
+returns HTTP 201 for the committed Postgres operation.
+On the other hand, for requests to access accounts and listings
+via 'GET /accounts/{account_id}' and 'GET /listings',
+most records are obtained from Cassandra tables.
+In other words, while Postgres still stores the states for listings and orders,
+Cassandra provides materialized read views to reduce loads on Postgres,
+but may disagree with Postgres or with each other due to failures
+and its own consistency guarantees.
+</p>
+
+<hr><a name="consistency" class="section">
+IV. Tunable Consistency</a>
+
+<p>
+According to the CAP theorem, a distributed database
+like Cassandra must choose one from consistency and availability
+during a network partition. Cassandra allows to trade-off consistency
+with availability by tunable consistency where each write and read
+could choose a different consistency level.
+For this project we will experiment with the combinations of three
+consistency levels:
+ONE for one replica to confirm, ALL for all replicas to confirm,
+and QUORUM for more than half of the replicas to confirm.
+A write followed by a read at ONE/ONE can return an older view
+because the read need not contact the replica that acknowledged the write.
+On the other hand, all of QUORUM/QUORUM, ALL/ONE, and ONE/ALL overlap
+in at least one replica to provide consistency guarantee
+on the same table row when both operations succeed.
+However, node availability and application behavior still matter
+and will require your further investigations.
+</p>
+
+<p>
+For your convenience, we provide the script 'run_experiment.sh'
+to streamline the experimental process.
+This script takes three parameters:
+the first is the consistency level applies to Cassandra writes,
+the second is the consistency level applies to Cassandra reads,
+and the third specifies the number of available Cassandra nodes at start-up.
+It will reset the data for each run,
+waits for marketplace readiness,
+and creates five listings and five orders.
+Upon completion, it saves only the HTTP status
+and formatted JSON body of its final
+'GET /accounts/Alice' under 'out/experiment-*.txt',
+and leaves the services running for your inspections.
+</p>
+
+<p>
+Start your first experiment with QUORUM/QUORUM and all nodes available.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj04$ ./run_experiment.sh QUORUM QUORUM 3
+...
+Saved final query to out/experiment-write-quorum-read-quorum-nodes-3.txt
+Services remain running for additional inspection; the next run resets them.
+</pre>
+Read the file 'out/experiment-write-quorum-read-quorum-nodes-3.txt'.
+You should be able to see Alice's records of 5 sold listings, 5 sales,
+no purchase, and a current balance of 50.
+At this point, since the services remain running,
+you can view the logs of the services as we have mentioned in Section II,
+e.g. for 'marketplace-service':
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj04$ docker compose logs marketplace-service
+...
+marketplace-service-1  | ... INFO connected to Cassandra
+marketplace-service-1  | ... INFO Cassandra history schema ready
+marketplace-service-1  | ... WARN authentication disabled; use only for course development
+marketplace-service-1  | ... INFO marketplace service listening on :8080
+marketplace-service-1  | ... INFO listing listing-1 committed in Postgres and projected to Cassandra
+marketplace-service-1  | ... INFO listing listing-2 committed in Postgres and projected to Cassandra
+marketplace-service-1  | ... INFO listing listing-3 committed in Postgres and projected to Cassandra
+marketplace-service-1  | ... INFO listing listing-4 committed in Postgres and projected to Cassandra
+marketplace-service-1  | ... INFO listing listing-5 committed in Postgres and projected to Cassandra
+marketplace-service-1  | ... INFO order order-1 committed in Postgres and projected to Cassandra
+marketplace-service-1  | ... INFO order order-2 committed in Postgres and projected to Cassandra
+marketplace-service-1  | ... INFO order order-3 committed in Postgres and projected to Cassandra
+marketplace-service-1  | ... INFO order order-4 committed in Postgres and projected to Cassandra
+marketplace-service-1  | ... INFO order order-5 committed in Postgres and projected to Cassandra
+</pre>
+</p>
+
+<p>
+You will need to experiment with four more cases as listed below
+that all use two available nodes:
+<ul>
+<li>./run_experiment.sh QUORUM QUORUM 2</li>
+<li>./run_experiment.sh ONE ONE 2</li>
+<li>./run_experiment.sh ALL ONE 2</li>
+<li>./run_experiment.sh ONE ALL 2</li>
+</ul>
+Run each case separately. Then inspect the output file, logs,
+node status, or make additional requests to understand the behavior of the system.
+Collect evidence as needed before starting the next case, which resets the data.
+</p>
+
+<hr><a name="report" class="section">
+V. Project Deliverables</a>
+
+<p>
+Prepare a project report in .doc/.docx or .pdf format
+and submit it to Canvas before the deadline.
+Your project report should include the following
+for a total of 20 points:
+<ul>
+<li>
+Section II
+  <ul>
+  <li>(1 point)
+  What happens if one misconfigures the CASSANDRA_CLUSTER_NAME
+  variable in docker-compose.yml?</li>
+  <li>(1 point)
+  What is the purpose of the CASSANDRA_SEEDS variable in docker-compose.yml?
+  Is it necessary to list all the servers?</li>
+  <li>(1 point)
+  Show a cluster status screenshot.
+  What does the UN mean for the first column of the output from
+  <span class="command">nodetool status?</span></li>
+  </ul>
+</li>
+<li>
+Section III
+  <ul>
+  <li>(1 point)
+  Trace 'marketplace-service/main.go' to explain
+  how the service waits for Postgres and Cassandra databases
+  to become available. In particular, how many Cassandra nodes
+  are needed for the service to start?</li>
+  <li>(3 points)
+  Trace the three requests
+  './scripts/list.sh Alice "Used textbook" 25',
+  './scripts/order.sh "$listing_id" Bob',
+  and './scripts/account.sh Bob "$day" "$day"'
+  in 'run_baseline.sh' to explain how each request
+  modifies the database tables or obtains data from them.
+  You should identify the tables being accessed as well as
+  the primary keys of the rows being accessed.</li>
+  <li>(2 points)
+  Refer to 'marketplace-service/history/history.go'.
+  Someone suggests partitioning the
+  <span class="command">available_listings</span> table
+  by the year in 'listed_at' instead of using 'feed'.
+  Would this improve the design and why?
+  If the suggestion is adopted, describe any changes
+  to the 'GET /listings' API you would make and
+  explain how the handler would find listings
+  across years.</li>
+  </ul>
+</li>
+<li>
+Section IV
+  <ul>
+  <li>(10 points)
+  For each of the five cases, explain the behavior of the system
+  using the output file as well as evidence from service logs,
+  node status, and queries against Postgres and Cassandra.
+  Are the observed data consistent and does the observed result
+  agree with or differ from the consistency guarantee?
+  When there is an inconsistency in the observations,
+  how do you know if the orders actually complete successfully?
+  </li>
+  <li>(1 point)
+  Refer to the function 'createOrderHandler' in
+  'marketplace-service/handlers.go'.
+  Writes to Cassandra tables upon completion of an order
+  may get lost due to failures and result in inconsistencies.
+  Someone proposes to include the function 'history.WriteOrder'
+  that writes Cassandra tables as part of the Postgres transaction
+  in the function 'store.CreateOrder' so that if any of them
+  fails, the order won't complete.
+  Will this approach work and why?</li>
+  </ul>
+</li>
+</ul>
+</p>
+
+</body>
+</html>

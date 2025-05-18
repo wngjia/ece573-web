@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" type="text/css" href="course.css">
+<title>ECE 473/573 Fall 2026 - Project 5</title>
+</head>
+<body>
+
+<center>
+<p>
+<h1>ECE 473/573 Fall 2026 - Project 5</h1>
+<h1>Container Orchestration with Kubernetes</h1>
+</p>
+
+<p><hr>
+<br>Report Due: 11/15 (Sun.), by the end of the day (Chicago time)
+<br>Late submissions will NOT be graded
+</p>
+</center>
+
+<hr><a name="objective" class="section">
+I. Objective</a>
+
+<p>
+In this project, you will learn the basics of Kubernetes (K8s),
+a popular open-source container orchestration platform for cluster computing.
+We will migrate our Project 4 marketplace
+from Docker Compose to K8s using a set of Services,
+Deployments, and StatefulSets for the application and its databases.
+</p>
+
+<p>
+While K8s usually runs on a cluster of nodes
+that are physical servers or VMs in production,
+we'll create a local K8s cluster with
+the <a href="https://kind.sigs.k8s.io/">kind</a> tool,
+which allows to use Docker container as nodes.
+In other words, we will have "nested" containers managed
+by K8s running within Docker containers.
+On the other hand, since we still manage the local
+K8s cluster through standard K8s tools like kubectl,
+all configurations are ready to be deployed into
+a cluster of physical servers or VMs,
+either on-premises or in cloud.
+</p>
+
+<hr><a name="cluster" class="section">
+II. kind Cluster and Database Setup</a>
+
+<p>
+Clone the repository <a href="https://github.com/wngjia/ece573-prj05.git">
+https://github.com/wngjia/ece573-prj05.git</a>
+that holds scripts and source code for Project 5.
+Similar to previous projects, please create a new VM by importing
+our VM Appliance, make a clone of the repository (or fork it first),
+and provision the instance with the script <span class="command">setup_vm.sh</span>.
+Optionally, follow Project 4 instruction
+if you want to incorporate your updates from Project 3.
+The provided workflows use <span class="command">AUTH_ENABLED=false</span>
+that permits access to account and history without authorization.
+</p>
+
+<p>
+Briefly review our <span class="command">README.md</span>,
+either in its textual form, or directly on
+<a href="https://github.com/wngjia/ece573-prj05">
+GitHub</a> as a web page.
+Instead of executing <span class="command">run_baseline.sh</span> directly,
+for this and following projects we will use a slightly different set
+of scripts to give you more realistic feeling of working on a cluster.
+First of all, take a look at 'kind-cluster.yaml' that
+defines the cluster itself.
+The cluster has one control-plane node and five workers.
+The port mappings expose the marketplace and login Services
+at 127.0.0.1:8080 and 127.0.0.1:8081 to the VM host
+to facilitate development and testing,
+which is otherwise not necessary if you are working on a physical cluster.
+Executing the script <span class="command">create_cluster.sh</span>
+to create the cluster.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj05$ ./create_cluster.sh
+No kind clusters found.
+Creating cluster "ece573-prj05" ...
+ ✓ Ensuring node image (kindest/node:v1.37.0) 🖼️
+ ✓ Preparing nodes 📦 📦 📦 📦 📦 📦
+ ✓ Writing configuration 📜
+ ✓ Starting control-plane 🕹️
+ ✓ Installing CNI 🔌
+ ✓ Installing StorageClass 💾
+ ✓ Joining worker nodes 🚜
+Set kubectl context to "kind-ece573-prj05"
+...
+partitioned roll out complete: 3 new pods have been updated...
+</pre>
+It will take sometime to complete and then you can verify
+that the cluster is running by <span class="command">kind get nodes --name ece573-prj05</span>
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj05$ kind get nodes --name ece573-prj05
+ece573-prj05-worker4
+ece573-prj05-worker2
+ece573-prj05-control-plane
+ece573-prj05-worker
+ece573-prj05-worker5
+ece573-prj05-worker3
+</pre>
+</p>
+
+<p>
+Running <span class="command">docker ps</span>
+reveals that these nodes are indeed Docker containers.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj05$ docker ps
+CONTAINER ID   IMAGE                  ...   CREATED       STATUS       ...  NAMES
+1d14de86b03a   kindest/node:v1.37.0   ...   3 hours ago   Up 3 hours   ...  ece573-prj05-worker4
+cc205a5550d6   kindest/node:v1.37.0   ...   3 hours ago   Up 3 hours   ...  ece573-prj05-worker2
+aa69bb159a66   kindest/node:v1.37.0   ...   3 hours ago   Up 3 hours   ...  ece573-prj05-control-plane
+70826191b4b0   kindest/node:v1.37.0   ...   3 hours ago   Up 3 hours   ...  ece573-prj05-worker
+b0487ee281b5   kindest/node:v1.37.0   ...   3 hours ago   Up 3 hours   ...  ece573-prj05-worker5
+85b571cdf797   kindest/node:v1.37.0   ...   3 hours ago   Up 3 hours   ...  ece573-prj05-worker3
+</pre>
+K8s tools are available in these containers. For example,
+<span class="command">crictl</span> manages containers for K8s
+and works like the <span class="command">docker</span> commands
+we are familiar with. Executing <span class="command">crictl ps</span>
+on a worker node shows what K8s pods (containers) are running inside.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj05$ docker exec -it ece573-prj05-worker crictl ps
+CONTAINER      ...  CREATED      STATE    NAME         ATTEMPT  ...  POD
+755fe62eb27c8  ...  3 hours ago  Running  cassandra    0        ...  cassandra-1
+710a637d61e6e  ...  3 hours ago  Running  kindnet-cni  0        ...  kindnet-l4xzr
+99c4418ebfb5e  ...  3 hours ago  Running  kube-proxy   0        ...  kube-proxy-5j22k
+</pre>
+Note that K8s will ask each pod to pull container images as needed,
+which may cause network congestions.
+To avoid such issues, our scirpt 'create_cluster.sh'
+will pull the necessary images and load them into kind nodes.
+</p>
+
+<p>
+You may have identified the running cassandra nodes in the above outputs.
+Indeed, in the scirpt 'create_cluster.sh', after we create the cluster,
+for convenience we also deploy the Postgres and Cassandra databases into the cluster.
+The K8s configuration file 'k8s/databases.yaml' defines two sets of objects,
+one each for Postgres and Cassandra,
+while each set of the objects consisting of a Service and a StatefulSet.
+The details of these databases can be inspected via <span class="command">kubectl</span>,
+the all-in-one K8s management tool.
+Use <span class="command">kubectl get pods</span> and
+<span class="command">kubectl get services</span>
+to list all running pods and services.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj05$ kubectl get pods
+NAME          READY   STATUS    RESTARTS   AGE
+cassandra-0   1/1     Running   0          3h45m
+cassandra-1   1/1     Running   0          3h44m
+cassandra-2   1/1     Running   0          3h42m
+postgres-0    1/1     Running   0          3h45m
+ubuntu@ubuntu24:~/ece573-prj05$ kubectl get services
+NAME         TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
+cassandra    ClusterIP   None         <none>        9042/TCP   3h45m
+kubernetes   ClusterIP   10.96.0.1    <none>        443/TCP    3h46m
+postgres     ClusterIP   10.96.51.3   <none>        5432/TCP   3h45m
+</pre>
+As you can see, we deploy three pods to support
+a Cassandra cluster of 3 nodes, and a single pod for Postgres.
+We can also validate that Cassandra is actually
+running properly by <span class="command">nodetool status</span>.
+Use <span class="command">kubectl exec</span> to run it inside
+the K8s Cassandra pods.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj05$ kubectl exec cassandra-0 -- nodetool status
+Datacenter: datacenter1
+=======================
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load        Tokens  Owns (effective)  Host ID                               Rack
+UN  10.244.1.3  186.36 KiB  16      59.3%             1f4ab043-f1ad-44a3-94a9-d45f7bf7a9b1  rack1
+UN  10.244.2.3  162.41 KiB  16      76.0%             fdac4d42-77a7-4cf9-918b-8895bd15c886  rack1
+UN  10.244.4.3  215.27 KiB  16      64.7%             b20bed39-e5ae-4847-9060-57aa8bd41f7e  rack1
+</pre>
+</p>
+
+<p>
+To conclude this section, we mention that you can run
+the script <span class="command">destroy_cluster.sh</span>
+to destroy the kind cluster including all K8s services and pods.
+Note that it deletes all data from the databases
+so you should only use it after you complete the project,
+or if the cluster doesn't work properly and you would like
+to start from scratch again.
+</p>
+
+<hr><a name="applications" class="section">
+III. Application Deployment</a>
+
+<p>
+Now we are ready to build and deploy our marketplace application to the K8s cluster.
+Open 'k8s/apps.yaml' to see the login and marketplace Deployments and their Services.
+The login deployment has one replica and the marketplace deployment has two.
+Their services select pods by labels and send traffic only to ready endpoints.
+The pods connect to Postgres and Cassandra by K8s DNS names
+specified in their environment variables.
+The script <span class="command">deploy_apps.sh</span>
+builds and loads the docker images, applies 'k8s/apps.yaml',
+and waits for the pods to become ready.
+You can also run <span class="command">kubectl get pods,services</span>
+to see the updated list of pods and services.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj05$ ./deploy_apps.sh
+...
+deployment "login-service" successfully rolled out
+...
+deployment "marketplace-service" successfully rolled out
+Ready: marketplace http://127.0.0.1:8080; login http://127.0.0.1:8081
+ubuntu@ubuntu24:~/ece573-prj05$ kubectl get pods,services
+NAME                                       READY   STATUS    RESTARTS   AGE
+pod/cassandra-0                            1/1     Running   0          4h21m
+pod/cassandra-1                            1/1     Running   0          4h20m
+pod/cassandra-2                            1/1     Running   0          4h18m
+pod/login-service-7d8cc786db-jbqcl         1/1     Running   0          78s
+pod/marketplace-service-7d8cbb49bb-97lzh   1/1     Running   0          71s
+pod/marketplace-service-7d8cbb49bb-wds9m   1/1     Running   0          78s
+pod/postgres-0                             1/1     Running   0          4h21m
+
+NAME                          TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+service/cassandra             ClusterIP   None            <none>        9042/TCP         4h21m
+service/kubernetes            ClusterIP   10.96.0.1       <none>        443/TCP          4h21m
+service/login-service         NodePort    10.96.209.38    <none>        8081:30081/TCP   78s
+service/marketplace-service   NodePort    10.96.127.241   <none>        8080:30080/TCP   78s
+service/postgres              ClusterIP   10.96.51.3      <none>        5432/TCP         4h21m
+</pre>
+For your convenience, the script 'deploy_apps.sh'
+makes use of the K8s rollout to handle application updates.
+If you have modified the source code of the two services for the marketplace,
+you may simply run 'deploy_apps.sh' to rebuild the docker images,
+load them into kind nodes, and restart the corresponding K8s pods.
+</p>
+
+<p>
+It's finally time to run our baseline <span class="command">run_baseline.sh</span>.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj05$ ./run_baseline.sh
+Checking application endpoint http://127.0.0.1:8080/healthz...
+Checking application endpoint http://127.0.0.1:8081/healthz...
+Baseline passed with seller Alice_5bfa2638c8af69f7 and buyer Bob_5bfa2638c8af69f7. Responses are saved in out/.
+</pre>
+This is a little bit different from our previous projects:
+since we assume there is a running cluster,
+our baseline no longer reset the database and thus need to setup
+a random seller and a random buyer.
+Other logic in the baseline remains the same:
+it creates both account, grants buyer credit, lists an item,
+completes an order, and checks the account and listing views.
+It also confirms that the same listing cannot be ordered twice,
+and saves the responses under 'out/'.
+</p>
+
+<hr><a name="retries" class="section">
+IV. Retrying Transient Failures</a>
+
+<p>
+Project 4 showed that with QUORUM consistency for both read and write,
+the marketplate service will be able to access the most recent update
+to any row in the Cassandra read view, as long as more than half
+of the Cassandra nodes holding the replicas are available.
+</p>
+
+<p>
+However, in the case that at least half of such nodes fail,
+it is possible to have listings and orders committed in Postgres
+but not projected to the corresponding Cassandra read views.
+Many of such node failures are not permanent but temporary,
+e.g. timeouts due to surges of load or the need to run garbage collection,
+and network interruptions that may heal by themselves.
+For these transient failures, apparently we could allow
+the projection code to retry to write to Cassandra multiple times.
+</p>
+
+<p>
+How could retrying projections potentially impact our marketplace otherwise?
+First of all, if we allow to retry the projections as many time as necessary until it succeeds,
+it may take a long time and anyone sending the RESTful request may have already given up.
+Therefore, the retrys have to be bounded.
+Indeed, to avoid anyone to abondon the request when the marketplace takes
+too much time to process it due to surge of load,
+we introduce a rate limiter for the requests to our marketplace
+in 'marketplace-service/request_limit.go'.
+Nevertheless, since the marketplace service is stateless,
+we are able to deploy multiple copies of it in K8s
+to serve more clients via horizontal scaling.
+</p>
+
+<p>
+Another issue is how we could test our implementations when transient failures are
+usually not seen very frequently and happen rather randomly.
+Instead of waiting for them to happen, we may inject such failures into the system
+intentionally and observe how the system reacts.
+Indeed, a simple way to inject a transient failure into a K8s cluster
+is to kill pods -- K8s will try to maintain the required number
+of healthy pods and thus replace the killed pods automatically.
+</p>
+
+<p>
+Putting everything together, we supply the script
+<span class="command">run_retry.py</span> to test the retries.
+It will send 100 uniquely titled listings at 10 new requests per second.
+After it sends 50 listings, it force-kills 'cassandra-1' and 'cassandra-2', leaving only 'cassandra-0'.
+K8s will take sometime to replace the two killed Cassandra nodes automatically.
+In the meantime, with replication factor three,
+QUORUM writes to the read views need two replicas and will fail.
+But once the two Cassandra nodes are back online,
+writes will complete successfully.
+Experiment with zero retries first,
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj05$ ./run_retry.py --retries 0
+...
+Waiting 30s for server requests to settle
+Settle wait: 15s remaining
+Settle wait: 0s remaining
+Counting this trial's Cassandra-backed listings
+Saved marketplace logs to /home/ubuntu/ece573-prj05/out/retry-0-marketplace.log
+expected_listings: 100
+rest_created: 100
+rest_failures: 0
+cassandra_matching_rows: 51
+</pre>
+It may take a while to complete and at the end,
+it reports that among the 100 listings sent ('expected_listings'),
+100 are created successfully ('rest_created') with 0 failures ('rest_failures'),
+while only 51 are found in Cassandra ('cassandra_matching_rows')
+due to the injected failures.
+Note that you may see different numbers here in your experiment,
+or even with failures when creating the listing ('rest_failures')
+-- this is totally normal as the experimental results depend
+on the performance of the VM.
+</p>
+
+<p>
+You may notice that the script <span class="command">run_retry.py</span>
+also exports and saves the marketplace logs from K8s to a file in 'out'
+that you can easily access.
+You can use any editor to view this file and there could be a lot of information.
+Instead, you may use <span class="command">grep</span> to filter lines,
+e.g. for listing projection failures,
+execute
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj05$ grep listing_projection_failed out/retry-0-marketplace.log
+...
+[pod/marketplace-service-7d8cbb49bb-q5k7n...] ... ERROR event=listing_projection_failed ...
+</pre>
+You could also count how many lines there are with that error
+using <span class="command">wc</span>,
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj05$ grep listing_projection_failed out/retry-0-marketplace.log|wc
+     49     735   10988
+</pre>
+The first number shows there are 49 lines, which matches
+the 51 found in Cassandra ('cassandra_matching_rows')
+as they add up to the 100 listings created successfully.
+Note that there could be more failed projections
+as the data may still reach Cassandra despite
+the marketplace service sees a failed projection.
+</p>
+
+<p>
+Will increasing the number of retries lead to more successful projections?
+Since the provided code doesn't implement the retries yet,
+you will need to complete the TODO in 'marketplace-service/history/history.go'
+before you can answer this question.
+Locate this TODO item and implement bounded retries
+for transient Cassandra write errors in the 'write' function
+as directed.
+Once you have completed the code,
+rebuild and redeploy the applications
+with <span class="command">deploy_apps.sh</span>
+as mentioned in Section III.
+</p>
+
+<p>
+Run three more experiments with one, three, and five retries.
+Take screenshots and inspect the saved log after each experiment
+so that you can answer questions for the project report
+while allowing the services to settle.
+<pre class="console">
+ubuntu@ubuntu24:~/ece573-prj05$ ./deploy_apps.sh
+ubuntu@ubuntu24:~/ece573-prj05$ ./run_retry.py --retries 1
+...
+ubuntu@ubuntu24:~/ece573-prj05$ ./run_retry.py --retries 3
+...
+ubuntu@ubuntu24:~/ece573-prj05$ ./run_retry.py --retries 5
+...
+</pre>
+</p>
+
+<hr><a name="report" class="section">
+V. Project Deliverables</a>
+
+<p>
+Prepare a project report in .doc/.docx or .pdf format
+and submit it to Canvas before the deadline.
+Your project report should include the following
+for a total of 20 points:
+<ul>
+<li>
+Section II
+  <ul>
+  <li>(1 point)
+  Provide evidences to show your kind cluster, Cassandra pods,
+  and Postgres pod are running properly.
+  </li>
+  <li>(1 point)
+  Provide evidences to show the Cassandra and Postgres
+  databases are running properly. How is this differ
+  from the question above?
+  </li>
+  <li>(1 point)
+  What amount of cpu, memory, and storage resources
+  are assigned to Cassandra and Postgres?
+  What are the difference between "limits" and "requests"
+  in the related K8s configuration?
+  </li>
+  <li>(1 point)
+  Run <span class="command">crictl ps</span> in the control plane
+  node and provide a screenshot to show K8s containers running inside.
+  Name two K8s control plane components from the list.
+  </li>
+  </ul>
+</li>
+<li>
+Section III
+  <ul>
+  <li>(1 point)
+  Why pod names for cassandra and postgres are numbered from 0
+  while those for login and marketplace services look random?
+  </li>
+  <li>(1 point)
+  Explain how login and marketplace services locate
+  the Cassandra and Postgres databases.
+  </li>
+  <li>(1 point)
+  Explain how K8s resolves a RESTful request to marketplace
+  to the marketplace pods. Will the request reach both marketplace pods?
+  </li>
+  <li>(1 point)
+  Does a healthy response to a '/healthz' request at the marketplace service
+  imply that service is ready?
+  How does this differ from the 'readinessProbe'
+  in the related K8s configuration?
+  (Hint: check the answer to the question above.)
+  </li>
+  <li>(2 points)
+  Trace the baseline listing and order through Postgres and Cassandra,
+  and show the buyer, seller, and browse responses.
+  </li>
+  </ul>
+</li>
+<li>
+Section IV
+  <ul>
+  <li>(2 points) Show the lines of code you have added
+  for retries and explain your approach.
+  </li>
+  <li>(6 points)
+  Complete all four experiments and provide screenshots showing
+  of retry count, total number of requests,
+  numbers of successful and failed requests,
+  and number of listings found in Cassandra.
+  Compare them in a table and explain how retries affect
+  both Cassandra views and RESTful requests.
+  Do retries solve issues with transient failures?
+  </li>
+  <li>(2 point)
+  Analyze the marketplace log for the experiment with five retries.
+  Provide evidences of the reported errors in the log correlating
+  to the reported counts of failed requests and listings found
+  in Cassandra.
+  </li>
+  </ul>
+</li>
+</ul>
+</p>
+
+</body>
+</html>

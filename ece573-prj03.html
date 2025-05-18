@@ -1,0 +1,382 @@
+<html>
+<head>
+<link rel="stylesheet" type="text/css" href="course.css">
+<title>ECE 473/573 Fall 2025 - Project 3</title>
+</head>
+<body>
+
+<center>
+<p>
+<h1>ECE 473/573 Fall 2025 - Project 3</h1>
+<h1>Distributed Database Systems</h1>
+</p>
+    
+<p><hr>
+<br>Report Due: 10/26 (Sun.), by the end of the day (Chicago time)
+<br>Late submissions will NOT be graded
+</center>
+</p>
+
+<hr><a name="objective" class="section">
+I. Objective</a>
+
+<p>
+In this project, you will learn the basics of Apache
+Cassandra, a popular open-source distributed NoSQL database.
+While production Cassandra deployment would require
+to use multiple physical servers,
+we use Docker Compose to create a Cassandra cluster
+via container orchestration for development and testing.
+</p>
+
+<hr><a name="cassandra" class="section">
+II. Cassandra Cluster Management</a>
+
+<p>
+Similar to our previous projects,
+create a new VM by importing
+our VM Appliance, make a clone of the repository (or fork it first)
+<a href="https://github.com/wngjia/ece573-prj03.git">
+https://github.com/wngjia/ece573-prj03.git</a>,
+and execute setup_vm.sh to setup the VM as needed.
+Since the setup_vm.sh is the same as that of Project 2,
+you may choose to reuse the VM for Project 2 this time.
+</p>
+
+<p>
+The docker-compose.yml script for Docker Compose defines
+our Cassandra cluster using 4 services. Take a look into this file.
+The services db1, db2, and db3 are used to simulate
+three physical servers, each with a Cassandra installation,
+while the service client simulates another server running
+our client programs writing to and reading from the Cassandra cluster.
+Note that we use the extends attribute in docker-compose.yml
+to define the services db2 and db3 from db1 so that there
+is no need to repeat the identical configurations.
+</p>
+
+<p>
+Follow the steps we learned in Project 2 to
+first build a docker image for client by
+<span class="command">docker compose build</span>,
+then create the containers by
+<span class="command">docker compose create</span>,
+and finally start the cluster by
+<span class="command">docker compose start</span>.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj03$ docker compose build
+[+] Building 60.6s (16/16) FINISHED             docker:default
+...
+ => => naming to docker.io/library/ece573-prj03-client    0.0s
+ubuntu@ece573:~/ece573-prj03$ docker compose create
+[+] Creating 5/5
+ ✔ Network ece573-prj03_default     Created        0.4s 
+ ✔ Container ece573-prj03-db1-1     Created        0.6s 
+ ✔ Container ece573-prj03-db3-1     Created        0.6s 
+ ✔ Container ece573-prj03-db2-1     Created        0.6s 
+ ✔ Container ece573-prj03-client-1  Created        0.6s 
+ubuntu@ece573:~/ece573-prj03$ docker compose start
+[+] Running 4/4
+ ✔ Container ece573-prj03-db3-1     Started        2.9s 
+ ✔ Container ece573-prj03-client-1  Started        3.6s 
+ ✔ Container ece573-prj03-db1-1     Started        3.4s 
+ ✔ Container ece573-prj03-db2-1     Started        3.7s
+</pre>
+</p>
+
+<p>
+Instead of use <span class="command">docker ps</span>
+to verify that all containers are running,
+we can use <span class="command">docker compose ps</span>
+to check the status of the containers for this cluster.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj03$ docker compose ps
+NAME                    IMAGE                 ...   SERVICE   ...   STATUS         ...
+ece573-prj03-client-1   ece573-prj03-client   ...   client    ...   Up 4 minutes   ...
+ece573-prj03-db1-1      cassandra:4.1.3       ...   db1       ...   Up 4 minutes   ...
+ece573-prj03-db2-1      cassandra:4.1.3       ...   db2       ...   Up 4 minutes   ...
+ece573-prj03-db3-1      cassandra:4.1.3       ...   db3       ...   Up 4 minutes   ...
+</pre>
+Pay attention to NAME, IMAGE, SERVICE, and STATUS columns for this project.
+If anything went wrong, use <span class="command">docker compose logs</span>
+with SERVICE to troubleshoot the issue.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj03$ docker compose logs db1
+...
+db1-1  | INFO  [OptionalTasks:1] ...
+</pre>
+</p>
+
+<p>
+As a distributed database system, one Cassandra program is running
+on each physical server (container for our cluster) to manage
+the resources locally, and they communicate with each other via networking.
+To manage the database system consisting of these programs,
+Cassandra provides two tools, <span class="command">nodetool</span>
+to access the statistics of the Cassandra programs, and
+<span class="command">cqlsh</span> to manage the databases
+and the data via the Cassandra Query Language (CQL),
+which is very similar to SQL.
+For simplicity, we don't install these two tools in our VM
+but use them directly from the Cassandra containers.
+Use <span class="command">docker compose exec</span> to execute
+a program in a container. For example,
+<span class="command">docker compose exec db1 nodetool status</span>
+executes <span class="command">nodetool status</span> that shows
+a summary of the cluster in the container db1.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj03$ docker compose exec db1 nodetool status
+Datacenter: datacenter1
+=======================
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load       Tokens  Owns (effective)  Host ID                               Rack 
+UN  172.20.0.3  70.27 KiB  16      74.1%             1cd62c0d-5e59-477a-855f-b3d5fde09958  rack1
+UN  172.20.0.2  70.29 KiB  16      62.0%             47915610-ad09-4a3a-b66a-0c351b080379  rack1
+UN  172.20.0.5  70.29 KiB  16      63.9%             050db53f-e422-428b-bbcf-7d1bef4cb366  rack1
+</pre>
+If the output shows a lot of error messages talking about Java,
+don't panic as the Cassandra cluster takes time to initialize
+and you will need to wait a few minutes to run the command again,
+until the summary of the cluster appears.
+</p>
+
+<p>
+Start <span class="command">cqlsh</span> in a similar way.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj03$ docker compose exec db1 cqlsh
+Connected to ece573-prj03 at 127.0.0.1:9042
+[cqlsh 6.1.0 | Cassandra 4.1.3 | CQL spec 3.4.6 | Native protocol v5]
+Use HELP for help.
+cqlsh> exit
+</pre>
+There is not much you can do without learning CQL first.
+Nevertheless, the output shows that our Cassandra cluster is indeed
+running because it mentions the cluster name ece573-prj03
+that we have set up in docker-compose.yml .
+Type exit to exit it.
+We will learn a few CQL commands for Project 3
+and feel free to explore further by reading
+CQL tutorials and documentations online.
+</p>
+
+<p>
+Finally, for development and testing it is a common requirement
+to restart with a empty database.
+Use <span class="command">docker compose down</span> to stop
+and destroy all containers, and discard all data within.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj03$ docker compose down
+[+] Running 5/5
+ ✔ Container ece573-prj03-db2-1     Removed     11.8s 
+ ✔ Container ece573-prj03-db3-1     Removed     11.7s 
+ ✔ Container ece573-prj03-client-1  Removed     11.2s 
+ ✔ Container ece573-prj03-db1-1     Removed      7.5s 
+ ✔ Network ece573-prj03_default     Removed      0.4s
+</pre>
+You can recreate and restart the cluster now by
+<span class="command">docker compose create</span>
+and <span class="command">docker compose start</span> .
+</p>
+
+<p>
+To complete this section, answer the following questions
+in the project report. You may need to perform additional
+searches online.
+  <ul>
+  <li>What happens if one misconfigures the CASSANDRA_CLUSTER_NAME
+  variable in docker-compose.yml?</li>
+  <li>What is the purpose of the CASSANDRA_SEEDS variable
+  in docker-compose.yml? Is it necessary to list all the servers?
+  </li>
+  <li>What does the UN mean for the first column of the output
+  from <span class="command">nodetool status?</span></li>
+  <li>In our cluster consisting of containers,
+  where does Cassandra store data?</li>
+  </ul>
+</p>
+
+<hr><a name="consistency" class="section">
+III. Tunable Consistency</a>
+
+<p>
+Cassandra supports a lot of programming languages, including Go,
+via CQL and a set of APIs.
+For Project 3, we provide two client programs writer and reader
+demonstrating how to create keyspaces and tables,
+and how to write data to and read data from a Cassandra cluster in Go.
+For simpicity, both programs use a single Go source file
+in their respective directories.
+</p>
+
+<p>
+Take a look at writer/writer.go . In this program, we first
+connect to the Casssandra cluster with the given consistency and seed.
+After displaying the cluster name, we create a keyspace
+ece573 to hold all tables for this course with a replication
+factor of 3. Then, we create a table ece573.prj03 within
+the keyspace for this project consisting of
+three columns: topic, seq, and value.
+This table could potentially be used by an IoT application
+to store measurements over time from devices,
+where topic specifies the device, seq records the time
+of measurements, and values are the readings.
+We set (topic, seq) as the primary key so that
+topic is the partition key and seq is the clustering key.
+Finally, the writer program starts an infinite loop
+to write rows with the given topic with consecutive seq's
+counting from 1 and random value's.
+</p>
+
+<p>
+The program in reader/reader.go follows similar steps
+to establish connection to the Casssandra cluster
+and then query data from the table using a given topic.
+Since the writer program constantly writes new rows
+to the database, the reader program uses an infinite loop
+to retrieve newly added rows by setting up a condition
+in the query using the seq obtained from the last query.
+</p>
+
+<p>
+According to the CAP theorem, a distributed database
+like Cassandra must give up one from consistency, availability,
+and partition tolerance. Cassandra allows to trade-off consistency
+with availability by tunable consistency where each write and read
+could choose a different consistency level.
+For Project 3 we will experiment with the combinations of three
+consistency levels:
+ONE for one replica to confirm, ALL for all replicas to confirm,
+and QUORUM for more than half of the replicas to confirm.
+If both read and write are done at level ONE, then consistency
+of data is not guaranteed. For Project 3, this means that
+for a topic, although the writer writes rows with consecutive seq's
+like 1,2,3,4,5,6,7,8,9,10,..., the reader may fail to obtain some
+seq's and receive only 1,3,5,8,10,....
+Such inconsistencies are detected by the reader program as
+mismatch between the number of rows and the last seq received.
+</p>
+
+<p>
+To observe the inconsistency, you will need to run writer and reader
+at the same time. For convenience, create another terminal window to the VM
+using VSCode by first clicking the menu item File/Duplicate Workspace
+and then from the new VSCode window Terminal/New Terminal after you enter
+the password.
+You can also use PuTTY or any other tool to connect to the VM.
+In one of the terminal, start writer by
+<span class="command">docker compose exec client writer test ONE db1</span>.
+This allows to start the writer program in the client container with the
+topic test, the consistency level ONE, and the seed db1 to initialize
+connection to the Cassandra cluster. Make sure the cluster is running via
+the <span class="command">nodetool status</span> command introduced in the previous section.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj03$ docker compose exec client writer test ONE db1
+2023/10/08 17:52:56 Connecting cluster at db1 with consistency ONE for topic test
+2023/10/08 17:52:56 Connected to cluster ece573-prj03
+2023/10/08 17:53:20 test: inserted 1000 rows
+...
+</pre>
+Keep the writer running and in the other terminal start reader by
+<span class="command">docker compose exec client reader test ONE db2</span>.
+The reader program takes the same three arguments like the writer program
+but please pay attention to that we have used db2 as the seed for the reader.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj03$ docker compose exec client reader test ONE db2
+2023/10/08 17:57:36 Connecting cluster at db2 with consistency ONE for topic test
+2023/10/08 17:57:37 Connected to cluster ece573-prj03
+2023/10/08 17:57:38 test: seq 19900 with 19900 rows
+2023/10/08 17:57:38 test: seq 19908 with 19908 rows
+...
+</pre>
+</p>
+
+<p>
+Here is what you need to do for this section.
+  <ul>
+  <li>Keep both reader and writer running. In a few minutes you should be able
+  to see that reader reports missing data. Provide screenshots and briefly
+  explain what is happening.</li>
+  <li>You can terminate the reader by Ctrl+C now and then restart it with the same
+  arguments. Does it report any missing data? Provide screenshots and briefly
+  explain what is happening.</li>
+  <li>Stop both the reader and writer and restart them with
+  a different topic and the QUORUM consistency.
+  Let them run for a few minutes.
+  Is the reader reporting any missing data and does that
+  match your expectation? Provide screenshots and briefly
+  explain why.</li>
+  <li>Repeat the above experiment using writer with the ALL consistency
+  and reader with the ONE consistency. Don't forget to change to a different topic.
+  Provide a screen shot and briefly explain your observations.</li>
+  <li>What may happen if the writer uses the QUORUM consistency
+  and the reader uses the ONE consistency?</li>
+  <li>Since the source code of both writer and reader are available
+  in our VM, can we run them from the VM directly without using the client container?
+  Briefly explain why or why not.</li>
+  </ul>
+</p>
+
+<hr><a name="availability" class="section">
+IV. Availability</a>
+
+<p>
+Once connected to the Cassandra cluster using the seed, the client programs
+like our reader and writer will receive a list of available Cassandra servers
+that they will connect to for load balancing and when the original server fails.
+Nevertheless, to achieve availability both the Cassandra programs and the client
+programs need to put effort to retry failed requests.
+</p>
+
+<p>
+Start the writer with consistency level ONE on db1.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj03$ docker compose exec client writer avail ONE db1
+2023/10/08 20:45:07 Connecting cluster at db1 with consistency ONE for topic avail
+2023/10/08 20:45:07 Connected to cluster ece573-prj03
+...
+</pre>
+In the other terminal, kill db2 by <span class="command">docker compose kill db2</span>.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj03$ docker compose kill db2
+[+] Killing 1/1
+ ✔ Container ece573-prj03-db2-1  Killed   1.9s
+</pre>
+There is a good chance that our writer connecting to db1 originally
+is connecting to db2 now and fails.
+<pre class="console">
+ubuntu@ece573:~/ece573-prj03$ docker compose exec client writer avail ONE db1
+2023/10/08 20:45:07 Connecting cluster at db1 with consistency ONE for topic avail
+2023/10/08 20:45:07 Connected to cluster ece573-prj03
+2023/10/08 20:45:24 avail: inserted 1000 rows
+2023/10/08 20:45:31 Cannot write 1437 to table ece573.prj03: read tcp 172.21.0.3:34480->172.21.0.5:9042: read: connection reset by peer
+</pre>
+</p>
+
+<p>
+Here is what you need to do for this section.
+  <ul>
+  <li>Modify writer.go to retry for a failed write operation.
+  Use a retry policy to wait 10 seconds before retrying but
+  allow infinite number of retries.</li>
+  <li>Build, create, and start the client again and demonstrate that writer
+  can keep adding rows when db2 is killed. Provide screenshots as needed.</li>
+  <li>What if db3 is also killed? Provide screenshots and briefly explain
+  your findings.</li>
+  <li>Restart writer with consistency QUORUM. Does the writer perform
+  differently when one server is killed and when two servers are killed?
+  Provide screenshots and briefly explain your findings.</li>
+  </ul>
+</p>
+
+<hr><a name="report" class="section">
+V. Project Deliverables</a>
+
+<p>
+Complete the tasks for Section II (4 points), III (8 points), and IV (8 points),
+include them in a project report in .doc/.docs or .pdf format,
+and submit it to Canvas before the deadline.
+</p>
+
+</body>
+</html>
